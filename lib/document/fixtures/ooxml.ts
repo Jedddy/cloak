@@ -75,6 +75,28 @@ const propertyTypes = {
   "docProps/app.xml": "application/vnd.openxmlformats-officedocument.extended-properties+xml",
 };
 
+const NS_C = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"';
+
+const NS_A = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"';
+
+const chartType = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
+
+/** A chart part whose title is `text`. */
+function chartPart(text: string): string {
+  return (
+    `${XML}<c:chartSpace ${NS_C} ${NS_A}><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:p><a:r><a:t>${esc(text)}</a:t></a:r></a:p>` +
+    "</c:rich></c:tx></c:title><c:plotArea><c:layout/></c:plotArea></c:chart></c:chartSpace>"
+  );
+}
+
+/** The `a:graphic` element that points at a chart relationship. */
+function chartGraphic(id: string): string {
+  return (
+    `<a:graphic ${NS_A}><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">` +
+    `<c:chart ${NS_C} r:id="${id}"/></a:graphicData></a:graphic>`
+  );
+}
+
 function packageRels(mainTarget: string): string {
   return relationships([
     { id: "rId1", type: `${REL}/officeDocument`, target: mainTarget },
@@ -111,6 +133,8 @@ export type DocxOptions = {
   hyperlink?: string;
   /** Adds a SmartArt data part. */
   smartArt?: boolean;
+  /** Adds a chart whose title is this text. */
+  chart?: string;
   /** Embeds a PNG and a GIF-named media part. */
   image?: boolean;
   author?: string;
@@ -191,6 +215,14 @@ export async function buildDocx(options: DocxOptions = {}): Promise<Uint8Array> 
     );
   }
 
+  if (options.chart) {
+    body.push(
+      '<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">' +
+        '<wp:extent cx="190500" cy="190500"/><wp:docPr id="2" name="Chart 1"/>' +
+        `${chartGraphic("rIdChart")}</wp:inline></w:drawing></w:r></w:p>`,
+    );
+  }
+
   const headerReference = options.header ? '<w:headerReference w:type="default" r:id="rIdHeader"/>' : "";
 
   const document =
@@ -247,6 +279,12 @@ export async function buildDocx(options: DocxOptions = {}): Promise<Uint8Array> 
     rels.push({ id: "rIdDiagram", type: `${REL}/diagramData`, target: "diagrams/data1.xml" });
   }
 
+  if (options.chart) {
+    files.set("word/charts/chart1.xml", chartPart(options.chart));
+    overrides.set("word/charts/chart1.xml", chartType);
+    rels.push({ id: "rIdChart", type: `${REL}/chart`, target: "charts/chart1.xml" });
+  }
+
   files.set("word/_rels/document.xml.rels", relationships(rels));
   files.set("[Content_Types].xml", contentTypes(overrides));
   files.set("_rels/.rels", packageRels("word/document.xml"));
@@ -272,6 +310,8 @@ export type XlsxSheet = {
   /** 1-based inclusive column ranges. */
   hiddenCols?: [number, number][];
   comments?: { ref: string; author: string; text: string }[];
+  /** Adds a chart whose title is this text. */
+  chart?: string;
 };
 
 export type XlsxOptions = {
@@ -339,9 +379,13 @@ export async function buildXlsx(options: XlsxOptions): Promise<Uint8Array> {
               return `<c r="${ref}" t="str">${formula}<v>${esc(cell.text ?? "")}</v></c>`;
             }
 
-            shared.push(cell.text ?? "");
+            const text = cell.text ?? "";
 
-            return `<c r="${ref}" t="s"><v>${shared.length - 1}</v></c>`;
+            if (!shared.includes(text)) {
+              shared.push(text);
+            }
+
+            return `<c r="${ref}" t="s"><v>${shared.indexOf(text)}</v></c>`;
           });
 
         return `<row r="${row}"${hidden}>${cellTags.join("")}</row>`;
@@ -367,7 +411,28 @@ export async function buildXlsx(options: XlsxOptions): Promise<Uint8Array> {
       sheetRels.push({ id: "rIdVml", type: `${REL}/vmlDrawing`, target: `../drawings/vmlDrawing${n}.vml` });
     }
 
-    files.set(`xl/worksheets/sheet${n}.xml`, `${XML}<worksheet ${S} ${NS_R}>${colsTag}<sheetData>${rows.join("")}</sheetData>${legacy}</worksheet>`);
+    let drawing = "";
+
+    if (sheet.chart) {
+      const anchor = "<xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff>";
+
+      files.set(
+        `xl/drawings/drawing${n}.xml`,
+        `${XML}<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ${NS_R}>` +
+          `<xdr:twoCellAnchor><xdr:from>${anchor}</xdr:from><xdr:to>${anchor}</xdr:to>` +
+          '<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="Chart 1"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>' +
+          `<xdr:xfrm><a:off ${NS_A} x="0" y="0"/><a:ext ${NS_A} cx="0" cy="0"/></xdr:xfrm>${chartGraphic("rId1")}</xdr:graphicFrame>` +
+          "<xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>",
+      );
+      files.set(`xl/drawings/_rels/drawing${n}.xml.rels`, relationships([{ id: "rId1", type: `${REL}/chart`, target: `../charts/chart${n}.xml` }]));
+      files.set(`xl/charts/chart${n}.xml`, chartPart(sheet.chart));
+      overrides.set(`xl/charts/chart${n}.xml`, chartType);
+      overrides.set(`xl/drawings/drawing${n}.xml`, "application/vnd.openxmlformats-officedocument.drawing+xml");
+      sheetRels.push({ id: "rIdDrawing", type: `${REL}/drawing`, target: `../drawings/drawing${n}.xml` });
+      drawing = '<drawing r:id="rIdDrawing"/>';
+    }
+
+    files.set(`xl/worksheets/sheet${n}.xml`, `${XML}<worksheet ${S} ${NS_R}>${colsTag}<sheetData>${rows.join("")}</sheetData>${drawing}${legacy}</worksheet>`);
     overrides.set(`xl/worksheets/sheet${n}.xml`, "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml");
     workbookRels.push({ id: `rIdSheet${n}`, type: `${REL}/worksheet`, target: `worksheets/sheet${n}.xml` });
 
@@ -416,6 +481,8 @@ export type PptxSlide = {
   texts: string[];
   notes?: string;
   hidden?: boolean;
+  /** Adds a chart whose title is this text. */
+  chart?: string;
 };
 
 export type PptxOptions = {
@@ -510,7 +577,19 @@ export async function buildPptx(options: PptxOptions): Promise<Uint8Array> {
     const show = slide.hidden ? ' show="0"' : "";
     const slideRels = [{ id: "rId1", type: `${REL}/slideLayout`, target: "../slideLayouts/slideLayout1.xml" }];
 
-    files.set(`ppt/slides/slide${n}.xml`, `${XML}<p:sld ${P}${show}><p:cSld><p:spTree>${emptyTree}${textBox(2, "Text", slide.texts)}</p:spTree></p:cSld></p:sld>`);
+    let frame = "";
+
+    if (slide.chart) {
+      frame =
+        '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="3" name="Chart 1"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>' +
+        '<p:xfrm><a:off x="457200" y="1800000"/><a:ext cx="4000000" cy="2000000"/></p:xfrm>' +
+        `${chartGraphic("rIdChart")}</p:graphicFrame>`;
+      files.set(`ppt/charts/chart${n}.xml`, chartPart(slide.chart));
+      overrides.set(`ppt/charts/chart${n}.xml`, chartType);
+      slideRels.push({ id: "rIdChart", type: `${REL}/chart`, target: `../charts/chart${n}.xml` });
+    }
+
+    files.set(`ppt/slides/slide${n}.xml`, `${XML}<p:sld ${P}${show}><p:cSld><p:spTree>${emptyTree}${textBox(2, "Text", slide.texts)}${frame}</p:spTree></p:cSld></p:sld>`);
     overrides.set(`ppt/slides/slide${n}.xml`, "application/vnd.openxmlformats-officedocument.presentationml.slide+xml");
     presentationRels.push({ id: `rIdSlide${n}`, type: `${REL}/slide`, target: `slides/slide${n}.xml` });
     slideIds.push(`<p:sldId id="${255 + n}" r:id="rIdSlide${n}"/>`);
