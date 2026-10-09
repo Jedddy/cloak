@@ -166,6 +166,10 @@ export async function saveRegion(packageId: string, body: RegionBody, layers: La
       return { findings: [...current, created], result: [created] };
     }
 
+    if (body.action === "add-span") {
+      throw new ApiError("bad-request", "Text selections are not supported yet.");
+    }
+
     const target = current.find((finding) => finding.id === body.findingId);
 
     if (target === undefined) {

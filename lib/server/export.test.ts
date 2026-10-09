@@ -65,6 +65,7 @@ function fakeLayers(warn = false): Layers {
       resolveMode: async () => ({ mode: "rules-only", locality: "local", models: { text: null, vision: null } }),
     },
     redact: stubLayers.redact,
+    document: stubLayers.document,
   };
 }
 

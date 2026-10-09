@@ -65,7 +65,7 @@ function recordingLayers(calls: string[], overrides: Overrides = {}): Layers {
     ...overrides.ai,
   };
 
-  return { detect, ai, redact: stubLayers.redact };
+  return { detect, ai, redact: stubLayers.redact, document: stubLayers.document };
 }
 
 function file(name: string, kind: FileEntry["kind"]): FileEntry {

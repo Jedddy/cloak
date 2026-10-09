@@ -18,12 +18,18 @@ function fingerprint(evidence: Evidence): string {
     case "image-region": {
       const { x, y, w, h } = evidence.box;
 
-      return `box:${round(x)},${round(y)},${round(w)},${round(h)}`;
+      const rounded = `${round(x)},${round(y)},${round(w)},${round(h)}`;
+
+      return evidence.anchor ? `box:${evidence.anchor}:${rounded}` : `box:${rounded}`;
     }
 
     case "image-whole":
       return "whole";
     case "file-structure":
+      if (evidence.anchor) {
+        return `struct:${evidence.anchor}`;
+      }
+
       return `bytes:${evidence.byteOffset ?? "none"}`;
   }
 }

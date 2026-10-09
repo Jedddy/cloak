@@ -2,12 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import JSZip from "jszip";
 import { z } from "zod";
 
 import { ApiError } from "@/lib/contract/errors";
 import { fixtureProfiles } from "@/lib/contract/fixtures";
 import {
   CoverageReportSchema,
+  DOCUMENT_MIMES,
   FindingSchema,
   OcrResultSchema,
   PackageSchema,
@@ -17,6 +19,7 @@ import {
   UPLOAD_LIMITS,
   VerificationResultSchema,
   type CoverageReport,
+  type DocumentFormat,
   type FileEntry,
   type FileKind,
   type Finding,
@@ -328,8 +331,27 @@ const pngMagic = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 const jpegMagic = [0xff, 0xd8, 0xff];
 
-/** Supported kinds follow M4: extension, plus a magic-byte check for images. */
-function detectKind(extension: string, bytes: Uint8Array): KindResult {
+const pdfMagic = [0x25, 0x50, 0x44, 0x46, 0x2d];
+
+const zipMagic = [0x50, 0x4b, 0x03, 0x04];
+
+const cfbMagic = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+
+const macroReason = "Macro-enabled documents are not supported.";
+
+const macroExtensions: ReadonlySet<string> = new Set(["docm", "xlsm", "pptm"]);
+
+/** Per OOXML format: the part that proves it, the mismatch wording, and the encrypted-file reason. */
+type OoxmlFormat = { format: DocumentFormat; mainPart: string; label: string; encrypted: string };
+
+const ooxmlFormats: ReadonlyMap<string, OoxmlFormat> = new Map([
+  ["docx", { format: "docx", mainPart: "word/document.xml", label: "DOCX, but the content is not a Word document", encrypted: "Encrypted document" }],
+  ["xlsx", { format: "xlsx", mainPart: "xl/workbook.xml", label: "XLSX, but the content is not an Excel workbook", encrypted: "Encrypted workbook" }],
+  ["pptx", { format: "pptx", mainPart: "ppt/presentation.xml", label: "PPTX, but the content is not a PowerPoint presentation", encrypted: "Encrypted presentation" }],
+]);
+
+/** Supported kinds follow M4: extension, plus a content check for images and documents. */
+async function detectKind(extension: string, bytes: Uint8Array): Promise<KindResult> {
   const textMime = textMimes.get(extension);
   const unsupported = "application/octet-stream";
 
@@ -353,6 +375,58 @@ function detectKind(extension: string, bytes: Uint8Array): KindResult {
     return { kind: "unsupported", mime: unsupported, reason: "The file name says JPEG, but the content is not JPEG." };
   }
 
+  if (extension === "pdf") {
+    if (!startsWith(bytes, pdfMagic)) {
+      return { kind: "unsupported", mime: unsupported, reason: "The file name says PDF, but the content is not PDF." };
+    }
+
+    if (Buffer.from(bytes).toString("latin1").includes("/Encrypt")) {
+      return { kind: "unsupported", mime: unsupported, reason: "Encrypted PDF" };
+    }
+
+    return { kind: "document", mime: DOCUMENT_MIMES.pdf, reason: null };
+  }
+
+  if (macroExtensions.has(extension)) {
+    return { kind: "unsupported", mime: unsupported, reason: macroReason };
+  }
+
+  const ooxml = ooxmlFormats.get(extension);
+
+  if (ooxml !== undefined) {
+    const mismatch = { kind: "unsupported", mime: unsupported, reason: `The file name says ${ooxml.label}.` } as const;
+
+    if (startsWith(bytes, cfbMagic)) {
+      if (Buffer.from(bytes).includes(Buffer.from("EncryptionInfo", "utf16le"))) {
+        return { kind: "unsupported", mime: unsupported, reason: ooxml.encrypted };
+      }
+
+      return mismatch;
+    }
+
+    if (!startsWith(bytes, zipMagic)) {
+      return mismatch;
+    }
+
+    let zip: JSZip;
+
+    try {
+      zip = await JSZip.loadAsync(bytes);
+    } catch {
+      return mismatch;
+    }
+
+    if (zip.file(ooxml.mainPart) === null) {
+      return mismatch;
+    }
+
+    if (Object.keys(zip.files).some((name) => name.endsWith("vbaProject.bin"))) {
+      return { kind: "unsupported", mime: unsupported, reason: macroReason };
+    }
+
+    return { kind: "document", mime: DOCUMENT_MIMES[ooxml.format], reason: null };
+  }
+
   return { kind: "unsupported", mime: unsupported, reason: "This file type is not supported." };
 }
 
@@ -363,7 +437,7 @@ export async function addOriginal(packageId: string, upload: Upload): Promise<Fi
   }
 
   const extension = storedExtension(upload.name);
-  const kind = detectKind(extension, upload.bytes);
+  const kind = await detectKind(extension, upload.bytes);
 
   const entry: FileEntry = {
     id: `file-${randomUUID()}`,

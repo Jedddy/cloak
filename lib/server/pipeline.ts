@@ -124,6 +124,10 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
     try {
       progress.setFile(file.id, "reading");
 
+      if (kind === "document") {
+        throw new Error("Documents are not supported yet.");
+      }
+
       const bytes = await input.readFile(file);
       let text: string | null = null;
 
@@ -135,7 +139,7 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
         }
       }
 
-      const structure = layers.detect.structure({ fileId: file.id, fileName: file.originalName, kind, bytes, text });
+      const structure = layers.detect.structure({ fileId: file.id, fileName: file.originalName, kind, bytes, text, document: null });
 
       const loadOcr = async (): Promise<OcrResult | null> => {
         if (kind !== "image") {

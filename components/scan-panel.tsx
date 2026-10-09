@@ -42,6 +42,7 @@ const stageLabels: Record<FileProgressStatus, string> = {
 const kindIcons: Record<FileEntry["kind"], typeof FileText> = {
   image: ImageIcon,
   text: FileText,
+  document: FileText,
   unsupported: FileQuestion,
 };
 
