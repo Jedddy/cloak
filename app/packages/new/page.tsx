@@ -50,7 +50,7 @@ import {
   type RecipientProfile,
 } from "@/lib/contract/schemas";
 import { categoryLabel, cn, formatBytes, plural } from "@/lib/utils";
-import { FileText, Image as ImageIcon, Upload, X } from "lucide-react";
+import { Check, FileText, Image as ImageIcon, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Bucket = "allowed" | "needsDecision" | "remove";
@@ -173,6 +173,14 @@ export default function NewPackagePage() {
       for (const category of profile[bucket.value]) {
         next[category] = bucket.value;
       }
+    }
+
+    for (const category of CategorySchema.options) {
+      next[category] ??= "needsDecision";
+    }
+
+    if (next.secret === "allowed") {
+      next.secret = "needsDecision";
     }
 
     setEditBuckets(next);
@@ -643,7 +651,10 @@ export default function NewPackagePage() {
           }
         }}
       >
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
+        <DialogContent
+          className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-2xl"
+          showCloseButton={!savingProfile}
+        >
           <DialogHeader>
             <DialogTitle>
               {editingProfile ? `Edit ${editingProfile.name}` : "Edit profile"}
@@ -653,32 +664,50 @@ export default function NewPackagePage() {
               that category. This changes the profile for every recipient that uses it.
             </DialogDescription>
           </DialogHeader>
-          <ul className="-mx-1 flex max-h-96 flex-col overflow-y-auto px-1">
+          <ul className="-mx-1 flex min-h-0 max-h-[55dvh] flex-col overflow-y-auto px-1">
             {CategorySchema.options.map((category) => (
               <li
                 key={category}
                 className="flex flex-col items-start gap-2 border-b py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
               >
-                <span className="text-sm">{categoryLabel(category)}</span>
+                <div className="min-w-0">
+                  <span className="text-sm font-medium">{categoryLabel(category)}</span>
+                  {category === "secret" && (
+                    <p id="secret-bucket-help" className="mt-1 text-xs text-muted-foreground">
+                      Secrets cannot be allowed.
+                    </p>
+                  )}
+                </div>
                 <ToggleGroup
                   value={editBuckets[category] ? [editBuckets[category]] : []}
-                  onValueChange={(value: string[]) =>
+                  onValueChange={(value: string[]) => {
+                    const bucket = buckets.find((item) => item.value === value[0]);
+
+                    if (!bucket) return;
+
                     setEditBuckets((current) => ({
                       ...current,
-                      [category]: buckets.find((bucket) => bucket.value === value[0])?.value,
-                    }))
-                  }
-                  spacing={0}
+                      [category]: bucket.value,
+                    }));
+                  }}
+                  disabled={savingProfile}
+                  spacing={1}
                   size="sm"
                   aria-label={`Bucket for ${categoryLabel(category)}`}
-                  className="w-full shrink-0 rounded-md bg-muted p-0.5 sm:w-72"
+                  aria-describedby={category === "secret" ? "secret-bucket-help" : undefined}
+                  className="grid w-full shrink-0 grid-cols-[1fr_1.5fr_1fr] rounded-lg border bg-muted/50 p-1 sm:w-88"
                 >
                   {buckets.map((bucket) => (
                     <ToggleGroupItem
                       key={bucket.value}
                       value={bucket.value}
-                      className={segmentItemClass}
+                      disabled={category === "secret" && bucket.value === "allowed"}
+                      className="h-9 min-w-0 gap-1 rounded-md text-xs text-muted-foreground transition-colors hover:bg-background/60 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs sm:h-8"
                     >
+                      <Check
+                        aria-hidden="true"
+                        className="hidden size-3 shrink-0 group-aria-pressed/toggle:block"
+                      />
                       {bucket.label}
                     </ToggleGroupItem>
                   ))}
