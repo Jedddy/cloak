@@ -5,8 +5,8 @@ import { hasLiveJob } from "./jobs";
 import { layers } from "./layers";
 import { readCoverage, readFindings, readPackage, readVerification, updatePackage } from "./store";
 
-/** The status a package goes back to when its job stopped with the server (KTD5). */
-function statusBeforeJob(pkg: Package): PackageStatus {
+/** The status a package goes back to when its job stopped or failed (KTD5). */
+export function statusBeforeJob(pkg: Package): PackageStatus {
   if (pkg.status === "scanning" && pkg.lastScan === null) {
     return "draft";
   }

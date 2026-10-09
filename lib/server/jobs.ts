@@ -107,6 +107,13 @@ export function getJob(jobId: string): Job | null {
   return registry.jobs.get(jobId) ?? null;
 }
 
+/** The scan or export job that runs for this package now, if any. */
+export function liveJob(packageId: string): Job | null {
+  const jobId = registry.live.get(packageId);
+
+  return jobId === undefined ? null : getJob(jobId);
+}
+
 export function hasLiveJob(packageId: string): boolean {
-  return registry.live.has(packageId);
+  return liveJob(packageId) !== null;
 }
