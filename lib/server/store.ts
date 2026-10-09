@@ -10,6 +10,7 @@ import { fixtureProfiles } from "@/lib/contract/fixtures";
 import {
   CoverageReportSchema,
   DOCUMENT_MIMES,
+  DocumentModelSchema,
   FindingSchema,
   OcrResultSchema,
   PackageSchema,
@@ -20,6 +21,7 @@ import {
   VerificationResultSchema,
   type CoverageReport,
   type DocumentFormat,
+  type DocumentModel,
   type FileEntry,
   type FileKind,
   type Finding,
@@ -520,6 +522,14 @@ export async function readOcr(packageId: string, fileId: string): Promise<OcrRes
 
 export async function writeOcr(packageId: string, fileId: string, ocr: OcrResult): Promise<void> {
   await writeJsonAtomic(workspacePaths.ocr(packageId, fileId), OcrResultSchema.parse(ocr));
+}
+
+export async function readDocument(packageId: string, fileId: string): Promise<DocumentModel | null> {
+  return readJsonFile(workspacePaths.document(packageId, fileId), DocumentModelSchema);
+}
+
+export async function writeDocument(packageId: string, fileId: string, model: DocumentModel): Promise<void> {
+  await writeJsonAtomic(workspacePaths.document(packageId, fileId), DocumentModelSchema.parse(model));
 }
 
 export async function deleteVerification(packageId: string): Promise<void> {

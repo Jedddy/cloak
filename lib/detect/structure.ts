@@ -384,6 +384,23 @@ export function structure(input: StructureInput): Promise<FindingCandidate[]> {
     }
   }
 
+  for (const item of input.document?.hidden ?? []) {
+    candidates.push({
+      fileId: input.fileId,
+      category: item.category,
+      detections: [
+        {
+          method: "structure",
+          ruleId: `document-${item.kind}`,
+          evidence: [{ type: "file-structure", note: item.note, byteOffset: null, anchor: `hidden:${item.id}` }],
+        },
+      ],
+      title: item.note,
+      reason: "Hidden content the recipient can find in the file.",
+      relatedGroupId: null,
+    });
+  }
+
   if (text !== null) {
     const zeroRanges = findZeroWidthRanges(text);
 

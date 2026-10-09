@@ -41,6 +41,8 @@ export const workspacePaths = {
     ),
   ocr: (packageId: string, fileId: string) =>
     join(workspacePaths.package(packageId), "derived", `${assertSafeId(fileId, "file")}.ocr.json`),
+  document: (packageId: string, fileId: string) =>
+    join(workspacePaths.package(packageId), "derived", `${assertSafeId(fileId, "file")}.document.json`),
   exportManifest: (packageId: string) => join(workspacePaths.package(packageId), "export-manifest.json"),
   reviewedDir: (packageId: string) => join(workspacePaths.package(packageId), "reviewed"),
   /** `exportName` must come from sanitizeExportName. */

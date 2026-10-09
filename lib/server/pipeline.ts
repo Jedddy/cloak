@@ -3,6 +3,8 @@ import type { AiAnalysisResult, EffectiveSettings, Layers } from "@/lib/contract
 import type {
   AiAnalysis,
   CoverageReport,
+  DocumentModel,
+  DocumentNote,
   FileEntry,
   FindingCandidate,
   Job,
@@ -15,6 +17,7 @@ import type {
   RecipientProfile,
   ScanStartBody,
 } from "@/lib/contract/schemas";
+import { documentFormat } from "@/lib/contract/schemas";
 
 import { carryDecisions } from "./carry";
 import { buildCoverage } from "./coverage";
@@ -33,6 +36,7 @@ import {
   updatePackage,
   withFindingsLock,
   writeCoverage,
+  writeDocument,
   writeFindings,
   writeOcr,
 } from "./store";
@@ -47,6 +51,10 @@ export type OcrCache = {
   write: (fileId: string, ocr: OcrResult) => Promise<void>;
 };
 
+export type DocumentCache = {
+  write: (fileId: string, model: DocumentModel) => Promise<void>;
+};
+
 export type AnalysisInput = {
   layers: Layers;
   settings: EffectiveSettings;
@@ -54,6 +62,8 @@ export type AnalysisInput = {
   files: FileEntry[];
   readFile: (file: FileEntry) => Promise<Uint8Array>;
   ocrCache: OcrCache;
+  /** Receives each document model with its OCR text appended. */
+  documentCache?: DocumentCache;
   profile: RecipientProfile;
   recipient: Recipient;
   otherClientNames: string[];
@@ -70,6 +80,7 @@ export type AnalysisResult = {
   /** The mode at the end: rules-only when the model failed during the scan. */
   mode: Mode;
   modeFallback: CoverageReport["modeFallback"];
+  documentNotes: DocumentNote[];
 };
 
 /** OCR words as text: words of a line joined by spaces, lines by newlines. */
@@ -109,6 +120,7 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
   let quotesDropped = 0;
   let mode = input.resolution.mode;
   let modeFallback: AnalysisResult["modeFallback"] = null;
+  const documentNotes: DocumentNote[] = [];
 
   progress.setMode(mode);
 
@@ -124,12 +136,10 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
     try {
       progress.setFile(file.id, "reading");
 
-      if (kind === "document") {
-        throw new Error("Documents are not supported yet.");
-      }
-
       const bytes = await input.readFile(file);
       let text: string | null = null;
+      let model: DocumentModel | null = null;
+      const imageOcr: { entry: DocumentModel["images"][number]; bytes: Uint8Array; mime: string; ocr: OcrResult }[] = [];
 
       if (kind === "text") {
         try {
@@ -139,7 +149,60 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
         }
       }
 
-      const structure = layers.detect.structure({ fileId: file.id, fileName: file.originalName, kind, bytes, text, document: null });
+      if (kind === "document") {
+        const format = documentFormat(file.mime);
+
+        if (format === null) {
+          throw new Error("This document type is not supported.");
+        }
+
+        const source = { fileName: file.originalName, format, bytes };
+
+        model = await layers.document.extract(source);
+
+        const extracted = model;
+        const images = await layers.document.images({ ...source, model: extracted });
+
+        // OCR for each embedded image and each PDF page that needs it, cached per image.
+        for (const [index, entry] of extracted.images.entries()) {
+          const image = images.find((candidate) => candidate.id === entry.id);
+
+          if (image === undefined) {
+            continue;
+          }
+
+          progress.setFile(file.id, "ocr");
+
+          const key = `${file.id}-i${index}`;
+          let ocr = await input.ocrCache.read(key);
+
+          if (ocr === null) {
+            ocr = await layers.detect.ocr({ fileId: file.id, fileName: file.originalName, bytes: image.bytes });
+            await input.ocrCache.write(key, ocr);
+          }
+
+          model = layers.document.withOcr({ model, imageId: entry.id, ocrWords: ocr.words });
+          imageOcr.push({ entry, bytes: image.bytes, mime: image.mime, ocr });
+        }
+
+        await input.documentCache?.write(file.id, model);
+
+        text = model.text;
+
+        for (const note of model.notAnalysed) {
+          documentNotes.push({ fileId: file.id, kind: "not-analysed", note: `${note.label}: not analysed (${note.reason})` });
+        }
+
+        if (model.signed) {
+          documentNotes.push({
+            fileId: file.id,
+            kind: "signature-dropped",
+            note: "The digital signature is dropped from the reviewed copy.",
+          });
+        }
+      }
+
+      const structure = layers.detect.structure({ fileId: file.id, fileName: file.originalName, kind, bytes, text, document: model });
 
       const loadOcr = async (): Promise<OcrResult | null> => {
         if (kind !== "image") {
@@ -162,6 +225,7 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
       };
 
       const [structureHits, ocr] = await Promise.all([structure, loadOcr()]);
+      const lowConfidence = ocr?.lowConfidence === true || imageOcr.some((image) => image.ocr.lowConfidence);
       const analyzedText = text ?? ocrText(ocr?.words ?? []);
       const textInput = { fileId: file.id, fileName: file.originalName, text: analyzedText, ocrWords: ocr?.words ?? null };
 
@@ -207,6 +271,40 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
             );
           }
 
+          if (model !== null && mode === "full") {
+            for (const image of imageOcr) {
+              progress.setFile(file.id, "ai-vision");
+
+              const anchor = image.entry.page === null ? `image:${image.entry.id}` : `page:${image.entry.page}`;
+              let ocrWords = image.ocr.words;
+
+              // A PDF page also gives the model its text-layer words.
+              if (image.entry.page !== null) {
+                const layerWords = model.words.filter((word) => word.anchor === anchor);
+
+                ocrWords = [
+                  ...layerWords.map((word, line) => ({ text: word.text, box: word.box, confidence: 100, line })),
+                  ...ocrWords,
+                ];
+              }
+
+              const vision = await layers.ai.analyzeVision({ ...context, imageBytes: image.bytes, mime: image.mime, ocrWords });
+
+              results.push({
+                ...vision,
+                candidates: vision.candidates.map((candidate) => ({
+                  ...candidate,
+                  detections: candidate.detections.map((detection) => ({
+                    ...detection,
+                    evidence: detection.evidence.map((evidence) =>
+                      evidence.type === "image-region" || evidence.type === "image-whole" ? { ...evidence, anchor } : evidence,
+                    ),
+                  })),
+                })),
+              });
+            }
+          }
+
           aiAnalysis = combinedAnalysis(results);
 
           // Text AI mode has no vision model: an image did not get a full AI analysis.
@@ -230,9 +328,22 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
 
       const merged = layers.detect.merge({ candidates: [...structureHits, ...ruleHits, ...termHits, ...aiHits] });
 
-      candidates.push(...layers.detect.applyProfile({ candidates: merged, profile: input.profile, recipient: input.recipient }));
+      const profiled = layers.detect.applyProfile({ candidates: merged, profile: input.profile, recipient: input.recipient });
 
-      if (ocr?.lowConfidence === true) {
+      for (const candidate of profiled) {
+        const hiddenItem = candidate.detections.some((detection) =>
+          detection.evidence.some((evidence) => evidence.type === "file-structure" && evidence.anchor?.startsWith("hidden:")),
+        );
+
+        // Hidden content in a document is removed unless the user decides otherwise (R9).
+        if (kind === "document" && hiddenItem && candidate.suggestedAction === "needs-decision") {
+          candidates.push({ ...candidate, suggestedAction: "redact" });
+        } else {
+          candidates.push(candidate);
+        }
+      }
+
+      if (lowConfidence) {
         lowConfidenceFileIds.push(file.id);
       }
 
@@ -246,7 +357,7 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
     }
   }
 
-  return { files, candidates, quotesDropped, lowConfidenceFileIds, mode, modeFallback };
+  return { files, candidates, quotesDropped, lowConfidenceFileIds, mode, modeFallback, documentNotes };
 }
 
 /** The recipient, its profile, and the names of the other saved recipients (other-client). */
@@ -291,6 +402,7 @@ async function runScan(run: ScanRun): Promise<void> {
         read: (fileId) => readOcr(packageId, fileId),
         write: (fileId, ocr) => writeOcr(packageId, fileId, ocr),
       },
+      documentCache: { write: (fileId, model) => writeDocument(packageId, fileId, model) },
       protectedTerms: pkg.protectedTerms,
       progress: run.progress,
     });
@@ -328,6 +440,7 @@ async function runScan(run: ScanRun): Promise<void> {
           locality: run.resolution.locality,
           models: run.resolution.models,
           modeFallback: result.modeFallback,
+          documentNotes: result.documentNotes,
         }),
       );
 

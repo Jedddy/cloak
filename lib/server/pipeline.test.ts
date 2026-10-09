@@ -2,8 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { fixtureProfiles, fixtureRecipients } from "@/lib/contract/fixtures";
 import type { AiLayer, DetectLayer, EffectiveSettings, Layers } from "@/lib/contract/interfaces";
-import type { FileEntry, Mode, ModeResolution } from "@/lib/contract/schemas";
+import { DOCUMENT_MIMES, type DocumentFormat, type DocumentModel, type FileEntry, type Mode, type ModeResolution, type OcrResult, type RecipientProfile } from "@/lib/contract/schemas";
 import { stubLayers } from "@/lib/contract/stubs";
+import { detectLayer } from "@/lib/detect";
+import { documentLayer } from "@/lib/document";
+import { buildDocx, buildPptx, buildXlsx } from "@/lib/document/fixtures/ooxml";
+import { buildPdf } from "@/lib/document/fixtures/pdf";
 
 import { analyzeFiles, startScan, type AnalysisInput } from "./pipeline";
 import { addOriginal, createPackage, readFindings, readPackage, withFindingsLock, writeFindings, writeRecipients } from "./store";
@@ -200,6 +204,226 @@ describe("analyzeFiles", () => {
     const result = await analyzeFiles(input(recordingLayers([]), [file("a.md", "text"), file("c.md", "text")]));
 
     expect(result.quotesDropped).toBe(4);
+  });
+});
+
+describe("analyzeFiles with documents", () => {
+  const secretWord = { text: "sk_live_4eC39HqLyjWDarjtT1zdp7dc", box: { x: 1, y: 1, w: 90, h: 10 }, confidence: 95, line: 0 };
+
+  function documentEntry(name: string, format: DocumentFormat): FileEntry {
+    return { ...file(name, "document"), mime: DOCUMENT_MIMES[format] };
+  }
+
+  /** Real document and detect layers; the model calls and OCR are recorded stubs. */
+  function realLayers(calls: string[], overrides: Overrides = {}): Layers {
+    const recording = recordingLayers(calls, overrides);
+
+    return {
+      ...recording,
+      detect: { ...detectLayer, ocr: recording.detect.ocr },
+      document: documentLayer,
+    };
+  }
+
+  function documentInput(layers: Layers, files: FileEntry[], bytes: Record<string, Uint8Array>, mode: Mode = "rules-only") {
+    return {
+      ...input(layers, files, mode),
+      readFile: async (entry: FileEntry) => bytes[entry.originalName] ?? new Uint8Array(),
+    };
+  }
+
+  test("a protected term in a DOCX table cell is found with offsets into the model text", async () => {
+    const cached: DocumentModel[] = [];
+    const bytes = await buildDocx({ table: [["Client", "Acme Corp"]] });
+    const entry = documentEntry("a.docx", "docx");
+
+    const result = await analyzeFiles({
+      ...documentInput(realLayers([]), [entry], { "a.docx": bytes }),
+      protectedTerms: ["Acme"],
+      otherClientNames: [],
+      documentCache: { write: async (_id, written) => void cached.push(written) },
+    });
+
+    const span = result.candidates
+      .flatMap((candidate) => candidate.detections.flatMap((detection) => detection.evidence))
+      .find((evidence) => evidence.type === "text-span" && evidence.quote.includes("Acme"));
+
+    expect(span?.type).toBe("text-span");
+
+    if (span?.type !== "text-span") {
+      throw new Error("expected a text span");
+    }
+
+    expect(cached[0]?.text.slice(span.start, span.end)).toBe(span.quote);
+  });
+
+  test("OCR of an embedded image is cached per image and its secret lies in the OCR section", async () => {
+    const written: Record<string, OcrResult> = {};
+    const cached: DocumentModel[] = [];
+    const entry = documentEntry("b.docx", "docx");
+
+    const layers = realLayers([], {
+      detect: { ocr: async () => ({ lowConfidence: false, words: [secretWord] }) },
+    });
+
+    const result = await analyzeFiles({
+      ...documentInput(layers, [entry], { "b.docx": await buildDocx({ paragraphs: ["Body"], image: true }) }),
+      ocrCache: { read: async () => null, write: async (id, ocr) => void (written[id] = ocr) },
+      documentCache: { write: async (_id, model) => void cached.push(model) },
+    });
+
+    expect(Object.keys(written)).toEqual([`${entry.id}-i0`]);
+
+    const model = cached[0];
+    const secret = result.candidates.find((candidate) => candidate.category === "secret");
+    const span = secret?.detections[0]?.evidence[0];
+
+    expect(model?.text).toContain(secretWord.text);
+    expect(span?.type).toBe("text-span");
+
+    if (span?.type !== "text-span" || model === undefined) {
+      throw new Error("expected a text span");
+    }
+
+    const section = model.sections.find((candidate) => candidate.title.startsWith("Image"));
+
+    expect(section?.items.some((item) => item.start <= span.start && span.end <= item.end)).toBe(true);
+    expect(model.text.slice(span.start, span.end)).toBe(span.quote);
+  });
+
+  test("AE4: a tracked change becomes a redact finding with a hidden anchor even when the profile asks for a decision", async () => {
+    const entry = documentEntry("c.docx", "docx");
+    const bytes = await buildDocx({ paragraphs: ["Body"], insertions: [{ id: 1, author: "J. Cruz", text: "Added" }] });
+    const profile: RecipientProfile = { ...fixtureProfiles[0], remove: [], needsDecision: ["hidden-data", "metadata"] };
+
+    const result = await analyzeFiles({ ...documentInput(realLayers([]), [entry], { "c.docx": bytes }), profile });
+    const revision = result.candidates.find((candidate) => candidate.detections.some((detection) => detection.ruleId === "document-revision"));
+    const evidence = revision?.detections[0]?.evidence[0];
+
+    expect(revision?.category).toBe("hidden-data");
+    expect(revision?.suggestedAction).toBe("redact");
+    expect(evidence?.type === "file-structure" && evidence.anchor?.startsWith("hidden:")).toBe(true);
+  });
+
+  test("a SmartArt part is a not-analysed note and not a finding", async () => {
+    const entry = documentEntry("d.docx", "docx");
+    const bytes = await buildDocx({ paragraphs: ["Body"], smartArt: true });
+    const result = await analyzeFiles(documentInput(realLayers([]), [entry], { "d.docx": bytes }));
+
+    expect(result.documentNotes.filter((note) => note.kind === "not-analysed" && note.fileId === entry.id)).toHaveLength(1);
+    expect(result.candidates.some((candidate) => candidate.title.toLowerCase().includes("smartart"))).toBe(false);
+  });
+
+  test("rules-only on a PDF finds secrets, calls no AI, and marks the file skipped-no-model", async () => {
+    const calls: string[] = [];
+    const entry = documentEntry("e.pdf", "pdf");
+    const bytes = buildPdf({ pages: [{ lines: [`key ${secretWord.text}`] }] });
+    const result = await analyzeFiles(documentInput(realLayers(calls), [entry], { "e.pdf": bytes }));
+
+    expect(result.candidates.some((candidate) => candidate.category === "secret")).toBe(true);
+    expect(result.files[0]?.aiAnalysis).toBe("skipped-no-model");
+    expect(calls.filter((call) => call.includes("analyze"))).toEqual([]);
+  });
+
+  test("when the model fails on the second document, later files are rules-only and the fallback names it", async () => {
+    const files = ["1", "2", "3"].map((name) => documentEntry(`${name}.docx`, "docx"));
+    const docx = await buildDocx({ paragraphs: ["Body"] });
+
+    const layers = realLayers([], {
+      ai: {
+        analyzeText: async (request) => {
+          if (request.fileName === "2.docx") {
+            throw new Error("connect ECONNREFUSED");
+          }
+
+          return { candidates: [], quotesDropped: 0, status: "done" };
+        },
+      },
+    });
+
+    const result = await analyzeFiles(
+      documentInput(layers, files, { "1.docx": docx, "2.docx": docx, "3.docx": docx }, "text-ai"),
+    );
+
+    expect(result.files.map((entry) => entry.aiAnalysis)).toEqual(["done", "failed", "failed"]);
+    expect(result.modeFallback?.atFileId).toBe(files[1]?.id);
+    expect(result.mode).toBe("rules-only");
+  });
+
+  test("F1: one file of each format ends processed, and Text AI never calls vision", async () => {
+    const calls: string[] = [];
+    const formats: DocumentFormat[] = ["pdf", "docx", "xlsx", "pptx"];
+    const files = formats.map((format) => documentEntry(`f.${format}`, format));
+
+    const bytes = {
+      "f.pdf": buildPdf({ pages: [{ lines: ["Page one"], image: true }] }),
+      "f.docx": await buildDocx({ paragraphs: ["Body"], image: true }),
+      "f.xlsx": await buildXlsx({ sheets: [{ name: "Sheet1", cells: { A1: { text: "Cell" } } }] }),
+      "f.pptx": await buildPptx({ slides: [{ texts: ["Slide"] }] }),
+    };
+
+    const result = await analyzeFiles(documentInput(realLayers(calls), files, bytes, "text-ai"));
+
+    expect(result.files.map((entry) => entry.status)).toEqual(["processed", "processed", "processed", "processed"]);
+    expect(result.files.map((entry) => entry.aiAnalysis)).toEqual(["done", "done", "done", "done"]);
+    expect(calls.some((call) => call.endsWith(":analyzeVision"))).toBe(false);
+  });
+
+  test("Full mode runs vision per image and anchors its evidence to the image", async () => {
+    const entry = documentEntry("g.docx", "docx");
+    const seen: number[] = [];
+
+    const layers = realLayers([], {
+      detect: { ocr: async () => ({ lowConfidence: false, words: [secretWord] }) },
+      ai: {
+        analyzeVision: async (request) => {
+          seen.push(request.ocrWords.length);
+
+          return {
+            candidates: [
+              {
+                fileId: request.fileId,
+                category: "other",
+                detections: [
+                  {
+                    method: "llm-vision",
+                    ruleId: null,
+                    evidence: [{ type: "image-region", box: { x: 0, y: 0, w: 5, h: 5 }, quote: null }],
+                  },
+                ],
+                title: "Logo",
+                reason: "r",
+                relatedGroupId: null,
+              },
+            ],
+            quotesDropped: 0,
+            status: "done",
+          };
+        },
+      },
+    });
+
+    const result = await analyzeFiles(documentInput(layers, [entry], { "g.docx": await buildDocx({ image: true }) }, "full"));
+    const region = result.candidates.find((candidate) => candidate.title === "Logo")?.detections[0]?.evidence[0];
+
+    expect(seen).toEqual([1]);
+    expect(region?.type === "image-region" && region.anchor).toBe("image:word/media/image1.png");
+  });
+
+  test("documentCache.write receives the model with the OCR text appended", async () => {
+    const entry = documentEntry("h.docx", "docx");
+    const models: DocumentModel[] = [];
+    const layers = realLayers([], { detect: { ocr: async () => ({ lowConfidence: false, words: [secretWord] }) } });
+
+    await analyzeFiles({
+      ...documentInput(layers, [entry], { "h.docx": await buildDocx({ paragraphs: ["Body"], image: true }) }),
+      documentCache: { write: async (id, model) => void models.push({ ...model, text: `${id}|${model.text}` }) },
+    });
+
+    expect(models).toHaveLength(1);
+    expect(models[0]?.text).toContain(`${entry.id}|Body`);
+    expect(models[0]?.text).toContain(secretWord.text);
+    expect(models[0]?.words.some((word) => word.text === secretWord.text)).toBe(true);
   });
 });
 

@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import JSZip from "jszip";
 
 import { fixtureFindings, fixtureRecipients } from "@/lib/contract/fixtures";
-import { UPLOAD_LIMITS, type Finding } from "@/lib/contract/schemas";
+import { UPLOAD_LIMITS, type DocumentModel, type Finding } from "@/lib/contract/schemas";
 
 import { workspacePaths } from "./paths";
 import {
@@ -13,8 +13,10 @@ import {
   createPackage,
   deletePackage,
   readFindings,
+  readDocument,
   readPackage,
   readProfiles,
+  writeDocument,
   writeFindings,
   writeRecipients,
 } from "./store";
@@ -235,4 +237,28 @@ test("profiles are seeded with the three presets on first read", async () => {
     "Client",
     "Public portfolio",
   ]);
+});
+
+test("a document model round-trips through derived/<file-id>.document.json", async () => {
+  const pkg = await newPackage();
+
+  const model: DocumentModel = {
+    format: "docx",
+    text: "Hello",
+    sections: [],
+    segments: [],
+    words: [],
+    hidden: [],
+    images: [],
+    notAnalysed: [],
+    signed: false,
+    pages: [],
+  };
+
+  expect(await readDocument(pkg.id, "file1")).toBeNull();
+
+  await writeDocument(pkg.id, "file1", model);
+
+  expect(await readDocument(pkg.id, "file1")).toEqual(model);
+  expect(workspacePaths.document(pkg.id, "file1")).toEndWith(join("derived", "file1.document.json"));
 });
