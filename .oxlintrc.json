@@ -19,7 +19,10 @@
     "out/**",
     "build/**",
     "next-env.d.ts",
-    "tools/oxlint/noslop/**"
+    "tools/oxlint/noslop/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**"
   ],
   "rules": {
     "no-array-constructor": "error",
