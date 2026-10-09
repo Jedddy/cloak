@@ -1,8 +1,8 @@
 import type { ProtectedTermsInput } from "@/lib/contract/interfaces";
-import type { FindingCandidate, OcrWord } from "@/lib/contract/schemas";
+import type { FindingCandidate } from "@/lib/contract/schemas";
 
-import { ocrWordOffsets, unionBox } from "./rules";
-import { lineAt } from "./structure";
+import { candidateForHits, ocrWordOffsets } from "./evidence";
+import type { Hit } from "./evidence";
 
 // Protected terms and other clients (overview section 11 layer 3, plan
 // R13). Case-insensitive exact matches on word boundaries, in text and
@@ -33,13 +33,7 @@ function termPattern(term: string): RegExp {
   return new RegExp(`\\b${escapeRegExp(term)}\\b`, "giu");
 }
 
-export type TermHit = {
-  start: number;
-  end: number;
-  quote: string;
-};
-
-export function scanTerm(text: string, term: string): TermHit[] {
+export function scanTerm(text: string, term: string): Hit[] {
   const clean = term.trim();
 
   if (clean === "") {
@@ -47,7 +41,7 @@ export function scanTerm(text: string, term: string): TermHit[] {
   }
 
   const pattern = termPattern(clean);
-  const hits: TermHit[] = [];
+  const hits: Hit[] = [];
   let match = pattern.exec(text);
 
   while (match !== null) {
@@ -90,48 +84,21 @@ export function protectedTerms(input: ProtectedTermsInput): Promise<FindingCandi
     const relatedGroupId = slugTerm(entry.term);
 
     for (const hit of scanTerm(input.text, entry.term)) {
-      const overlapping: OcrWord[] = offsets
-        .filter((item) => item.start < hit.end && item.end > hit.start)
-        .map((item) => item.word);
+      const found = candidateForHits({
+        fileId: input.fileId,
+        text: input.text,
+        offsets,
+        method: "protected-term",
+        ruleId: null,
+        category: entry.category,
+        title: entry.title,
+        reason: entry.reason,
+        relatedGroupId,
+        hits: [hit],
+      });
 
-      if (overlapping.length > 0) {
-        candidates.push({
-          fileId: input.fileId,
-          category: entry.category,
-          detections: [
-            {
-              method: "protected-term",
-              ruleId: null,
-              evidence: [{ type: "image-region", box: unionBox(overlapping), quote: hit.quote }],
-            },
-          ],
-          title: entry.title,
-          reason: entry.reason,
-          relatedGroupId,
-        });
-      } else {
-        candidates.push({
-          fileId: input.fileId,
-          category: entry.category,
-          detections: [
-            {
-              method: "protected-term",
-              ruleId: null,
-              evidence: [
-                {
-                  type: "text-span",
-                  start: hit.start,
-                  end: hit.end,
-                  line: lineAt(input.text, hit.start),
-                  quote: hit.quote,
-                },
-              ],
-            },
-          ],
-          title: entry.title,
-          reason: entry.reason,
-          relatedGroupId,
-        });
+      if (found !== null) {
+        candidates.push(found);
       }
     }
   }

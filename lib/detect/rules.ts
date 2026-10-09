@@ -1,7 +1,8 @@
 import type { TextInput } from "@/lib/contract/interfaces";
-import type { Box, Category, FindingCandidate, OcrWord } from "@/lib/contract/schemas";
+import type { Category, FindingCandidate } from "@/lib/contract/schemas";
 
-import { findInjectionRanges, findZeroWidthRanges, lineAt } from "./structure";
+import { candidateForHits, ocrWordOffsets } from "./evidence";
+import { findInjectionRanges, findZeroWidthRanges } from "./structure";
 
 // Rules layer (overview section 11 layer 2, plan R9-R12). Regex plus
 // validation. Each rule carries its id, category, title, and reason, and
@@ -360,50 +361,6 @@ export const RULES: readonly Rule[] = [
   },
 ];
 
-export type WordOffset = {
-  word: OcrWord;
-  start: number;
-  end: number;
-};
-
-/** Offsets of each OCR word in text built like the pipeline builds it. */
-export function ocrWordOffsets(words: OcrWord[]): WordOffset[] {
-  const byLine = new Map<number, OcrWord[]>();
-
-  for (const word of words) {
-    byLine.set(word.line, [...(byLine.get(word.line) ?? []), word]);
-  }
-
-  const ordered = [...byLine.entries()].sort(([left], [right]) => left - right);
-  const offsets: WordOffset[] = [];
-  let cursor = 0;
-
-  for (const [, line] of ordered) {
-    for (const word of line) {
-      offsets.push({ word, start: cursor, end: cursor + word.text.length });
-      cursor += word.text.length + 1;
-    }
-  }
-
-  return offsets;
-}
-
-export function unionBox(words: OcrWord[]): Box {
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-
-  for (const word of words) {
-    minX = Math.min(minX, word.box.x);
-    minY = Math.min(minY, word.box.y);
-    maxX = Math.max(maxX, word.box.x + word.box.w);
-    maxY = Math.max(maxY, word.box.y + word.box.h);
-  }
-
-  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-}
-
 export type TextHit = {
   ruleId: string;
   start: number;
@@ -454,59 +411,22 @@ export function rules(input: TextInput): Promise<FindingCandidate[]> {
   const offsets = input.ocrWords === null ? [] : ocrWordOffsets(input.ocrWords);
 
   const pushTextHits = (rule: Rule, hits: TextHit[]): void => {
-    if (hits.length === 0) {
-      return;
-    }
-
-    const regions = hits.flatMap((hit) => {
-      const overlapping = offsets.filter((entry) => entry.start < hit.end && entry.end > hit.start);
-
-      return overlapping.length === 0 ? [] : [{ hit, overlapping: overlapping.map((entry) => entry.word) }];
-    });
-
-    if (regions.length === hits.length && offsets.length > 0) {
-      candidates.push({
-        fileId: input.fileId,
-        category: rule.category,
-        detections: [
-          {
-            method,
-            ruleId: rule.id,
-            evidence: regions.map(({ hit, overlapping }) => ({
-              type: "image-region",
-              box: unionBox(overlapping),
-              quote: hit.quote,
-            })),
-          },
-        ],
-        title: rule.title,
-        reason: rule.reason,
-        relatedGroupId: null,
-      });
-
-      return;
-    }
-
-    candidates.push({
+    const found = candidateForHits({
       fileId: input.fileId,
+      text: input.text,
+      offsets,
+      method,
+      ruleId: rule.id,
       category: rule.category,
-      detections: [
-        {
-          method,
-          ruleId: rule.id,
-          evidence: hits.map((hit) => ({
-            type: "text-span",
-            start: hit.start,
-            end: hit.end,
-            line: lineAt(input.text, hit.start),
-            quote: hit.quote,
-          })),
-        },
-      ],
       title: rule.title,
       reason: rule.reason,
       relatedGroupId: null,
+      hits,
     });
+
+    if (found !== null) {
+      candidates.push(found);
+    }
   };
 
   for (const rule of RULES) {

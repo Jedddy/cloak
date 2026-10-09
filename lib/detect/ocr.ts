@@ -15,18 +15,11 @@ import type { createWorker } from "tesseract.js";
 export const OCR_LOW_CONFIDENCE_MEAN = 65;
 
 /** A recognized word before line assignment. */
-export const RawWordSchema = z.object({
-  text: z.string(),
-  confidence: z.number(),
-  box: z.object({
-    x: z.number(),
-    y: z.number(),
-    w: z.number(),
-    h: z.number(),
-  }),
-});
-
-export type RawWord = z.infer<typeof RawWordSchema>;
+export type RawWord = {
+  text: string;
+  confidence: number;
+  box: Box;
+};
 
 const TesseractOutputSchema = z.object({ tsv: z.string() });
 

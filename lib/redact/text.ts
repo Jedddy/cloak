@@ -55,11 +55,10 @@ export function redactText(input: TextRedactionInput): string {
     return span;
   });
 
-  const merged = expanded.sort((left, right) => left.start - right.start || right.end - left.end);
   let result = "";
   let cursor = 0;
 
-  for (const span of merged) {
+  for (const span of expanded) {
     const start = Math.max(0, Math.min(span.start, input.content.length));
     const end = Math.max(0, Math.min(span.end, input.content.length));
 

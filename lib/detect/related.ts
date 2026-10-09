@@ -1,9 +1,8 @@
 import type { FindRelatedInput, InconsistentRedactionsInput } from "@/lib/contract/interfaces";
 import type { Finding, FindingCandidate, PackageWarning } from "@/lib/contract/schemas";
 
+import { candidateForHits, hasQuote, ocrWordOffsets } from "./evidence";
 import { scanTerm, slugTerm } from "./protected-terms";
-import { ocrWordOffsets, unionBox } from "./rules";
-import { lineAt } from "./structure";
 
 // Package checks (overview section 13, plan R17-R18). Exact related search
 // and the inconsistent-redaction warning. Pure functions over findings.
@@ -23,48 +22,21 @@ export function findRelatedExact(input: FindRelatedInput): Promise<FindingCandid
     const offsets = source.ocrWords === null ? [] : ocrWordOffsets(source.ocrWords);
 
     for (const hit of scanTerm(source.text, clean)) {
-      const overlapping = offsets
-        .filter((item) => item.start < hit.end && item.end > hit.start)
-        .map((item) => item.word);
+      const found = candidateForHits({
+        fileId: source.fileId,
+        text: source.text,
+        offsets,
+        method: "protected-term",
+        ruleId: null,
+        category: "protected-term",
+        title: `Related: ${clean}`,
+        reason: "Exact match of a related term.",
+        relatedGroupId,
+        hits: [hit],
+      });
 
-      if (overlapping.length > 0) {
-        candidates.push({
-          fileId: source.fileId,
-          category: "protected-term",
-          detections: [
-            {
-              method: "protected-term",
-              ruleId: null,
-              evidence: [{ type: "image-region", box: unionBox(overlapping), quote: hit.quote }],
-            },
-          ],
-          title: `Related: ${clean}`,
-          reason: "Exact match of a related term.",
-          relatedGroupId,
-        });
-      } else {
-        candidates.push({
-          fileId: source.fileId,
-          category: "protected-term",
-          detections: [
-            {
-              method: "protected-term",
-              ruleId: null,
-              evidence: [
-                {
-                  type: "text-span",
-                  start: hit.start,
-                  end: hit.end,
-                  line: lineAt(source.text, hit.start),
-                  quote: hit.quote,
-                },
-              ],
-            },
-          ],
-          title: `Related: ${clean}`,
-          reason: "Exact match of a related term.",
-          relatedGroupId,
-        });
+      if (found !== null) {
+        candidates.push(found);
       }
     }
   }
@@ -77,16 +49,7 @@ function isVisible(finding: Finding): boolean {
 }
 
 function quoteMatches(finding: Finding, term: string): boolean {
-  const wanted = term.toLowerCase();
-
-  return finding.detections.some((detection) =>
-    detection.evidence.some(
-      (evidence) =>
-        (evidence.type === "text-span" || evidence.type === "image-region") &&
-        evidence.quote !== null &&
-        evidence.quote.toLowerCase() === wanted,
-    ),
-  );
+  return hasQuote(finding.detections, term);
 }
 
 function termForGroup(groupId: string, findings: Finding[], protectedTerms: string[]): string {

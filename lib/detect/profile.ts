@@ -1,22 +1,14 @@
 import type { ApplyProfileInput } from "@/lib/contract/interfaces";
 import type { FindingCandidate, ProfiledCandidate } from "@/lib/contract/schemas";
 
+import { hasQuote } from "./evidence";
+
 // Profile application (overview section 11, plan R15). suggestedAction
 // comes from the profile buckets and the recipient's allow rules. Rule
 // findings in category secret are never auto-kept.
 
 function allowedByRule(candidate: FindingCandidate, matchText: string): boolean {
-  const wanted = matchText.toLowerCase();
-
-  return candidate.detections.some((detection) =>
-    detection.evidence.some((evidence) => {
-      if (evidence.type === "text-span" || evidence.type === "image-region") {
-        return evidence.quote !== null && evidence.quote.toLowerCase() === wanted;
-      }
-
-      return false;
-    }),
-  );
+  return hasQuote(candidate.detections, matchText);
 }
 
 export function applyProfile(input: ApplyProfileInput): ProfiledCandidate[] {
