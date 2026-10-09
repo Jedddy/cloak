@@ -347,7 +347,7 @@ export default function SettingsPage() {
               ) : (
                 <ul className="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
                   {test.models.map((model) => (
-                    <li key={model} className="truncate font-mono text-[0.8125rem]">
+                    <li key={model} className="shrink-0 truncate font-mono text-[0.8125rem]">
                       {model}
                     </li>
                   ))}
