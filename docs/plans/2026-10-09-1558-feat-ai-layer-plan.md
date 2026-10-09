@@ -12,7 +12,7 @@ execution: code
 
 ## Goal Capsule
 
-- **Objective:** SentinelDesk finds context leaks (other clients, codenames, pricing, unreleased work) in text and screenshots with a local model, every AI finding points to exact evidence, and the app falls back cleanly when no model is reachable.
+- **Objective:** Cloak finds context leaks (other clients, codenames, pricing, unreleased work) in text and screenshots with a local model, every AI finding points to exact evidence, and the app falls back cleanly when no model is reachable.
 - **Owner:** Teammate C (Stream 3), on the GPU PC or on its LAN.
 - **Product authority:** `sentineldesk-overview.md` sections 11 (layers 5-6), 12, 13 (AI related suggestions), 18, 19 (evaluation). Interfaces come from `lib/contract/` (Stream 1). Coordination rules are in `docs/plans/2026-10-09-1558-docs-team-split-plan.md`.
 - **Open blockers:** Contract v1 (hour 2). Before that, run spikes F1, F2, and F6.

@@ -388,7 +388,7 @@ export function ReviewPanel({
                 <EmptyHeader>
                   <EmptyTitle>Not supported</EmptyTitle>
                   <EmptyDescription>
-                    SentinelDesk cannot read this file type. It is listed in coverage and is never
+                    Cloak cannot read this file type. It is listed in coverage and is never
                     treated as reviewed. Exclude it, or check it yourself before you send.
                   </EmptyDescription>
                 </EmptyHeader>

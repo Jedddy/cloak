@@ -23,6 +23,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -42,7 +44,7 @@ import {
 } from "@/lib/client/client";
 import type { Package, Recipient } from "@/lib/contract/schemas";
 import { cn, formatDateTime, openFindingsOf, plural, sentenceCase } from "@/lib/utils";
-import { FolderOpen, Plus, Trash2 } from "lucide-react";
+import { FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Row = {
@@ -55,6 +57,8 @@ type Row = {
 export default function PackagesPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
   const [deleting, setDeleting] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Package | null>(null);
 
@@ -113,6 +117,19 @@ export default function PackagesPage() {
     };
   }, []);
 
+  const search = query.trim().toLocaleLowerCase();
+
+  const visibleRows =
+    rows?.filter((row) => {
+      if (filter === "open" && row.openFindings === 0) return false;
+
+      if (filter === "exported" && row.pkg.status !== "exported") return false;
+
+      return `${row.pkg.name} ${row.recipientName} ${row.profileName}`
+        .toLocaleLowerCase()
+        .includes(search);
+    }) ?? [];
+
   async function onDelete() {
     if (!pendingDelete) {
       return;
@@ -135,19 +152,21 @@ export default function PackagesPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8">
-      <div className="flex items-end justify-between gap-4">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Packages</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="max-w-2xl text-sm text-muted-foreground">
             Each package is the set of files for one recipient. Scan it, decide on each finding,
             then export reviewed copies.
           </p>
         </div>
-        <Link href="/packages/new" className={buttonVariants()}>
-          <Plus data-icon="inline-start" />
-          New package
-        </Link>
+        {rows?.length !== 0 && (
+          <Link href="/packages/new" className={buttonVariants()}>
+            <Plus data-icon="inline-start" />
+            New package
+          </Link>
+        )}
       </div>
 
       {error && (
@@ -177,8 +196,8 @@ export default function PackagesPage() {
             </EmptyMedia>
             <EmptyTitle>No packages yet</EmptyTitle>
             <EmptyDescription>
-              Add the files you plan to send and pick who receives them. SentinelDesk shows what the
-              files reveal to that recipient.
+              Add the files you plan to send and pick who receives them. Cloak shows what the files
+              reveal to that recipient.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -191,95 +210,168 @@ export default function PackagesPage() {
       )}
 
       {rows !== null && rows.length > 0 && (
-        <div className="overflow-hidden rounded-lg border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 pl-4 text-xs text-muted-foreground">Package</TableHead>
-                <TableHead className="h-9 text-xs text-muted-foreground">Recipient</TableHead>
-                <TableHead className="h-9 text-xs text-muted-foreground">Status</TableHead>
-                <TableHead className="h-9 text-right text-xs text-muted-foreground">
-                  Open findings
-                </TableHead>
-                <TableHead className="hidden h-9 text-right text-xs text-muted-foreground md:table-cell">
-                  Created
-                </TableHead>
-                <TableHead className="h-9 w-12 pr-4">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => {
-                const scanned = row.pkg.lastScan !== null;
+        <section className="flex flex-col gap-3" aria-label="Your packages">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <InputGroup className="sm:max-w-xs">
+              <InputGroupAddon>
+                <Search aria-hidden="true" />
+              </InputGroupAddon>
+              <InputGroupInput
+                aria-label="Search packages"
+                placeholder="Search packages or recipients…"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </InputGroup>
+            <ToggleGroup
+              value={[filter]}
+              onValueChange={(value: string[]) => {
+                if (value[0]) setFilter(value[0]);
+              }}
+              spacing={0}
+              size="sm"
+              aria-label="Filter packages"
+              className="w-fit max-w-full rounded-md bg-muted p-0.5"
+            >
+              {[
+                { value: "all", label: "All packages" },
+                { value: "open", label: "Open findings" },
+                { value: "exported", label: "Exported" },
+              ].map((item) => (
+                <ToggleGroupItem
+                  key={item.value}
+                  value={item.value}
+                  className="rounded-md text-muted-foreground aria-pressed:bg-background aria-pressed:text-foreground"
+                >
+                  {item.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+          <p role="status" className="text-xs text-muted-foreground tabular-nums">
+            {visibleRows.length} of {plural(rows.length, "package")}
+          </p>
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <Table className="table-fixed sm:table-auto">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="h-9 pl-4 text-xs text-muted-foreground">Package</TableHead>
+                  <TableHead className="hidden h-9 text-xs text-muted-foreground sm:table-cell">
+                    Recipient
+                  </TableHead>
+                  <TableHead className="h-9 w-28 text-xs text-muted-foreground sm:w-auto">
+                    Status
+                  </TableHead>
+                  <TableHead className="hidden h-9 text-right text-xs text-muted-foreground sm:table-cell">
+                    Open findings
+                  </TableHead>
+                  <TableHead className="hidden h-9 text-right text-xs text-muted-foreground md:table-cell">
+                    Created
+                  </TableHead>
+                  <TableHead className="h-9 w-12 pr-4">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visibleRows.map((row) => {
+                  const scanned = row.pkg.lastScan !== null;
 
-                const busy = row.pkg.status === "scanning" || row.pkg.status === "exporting";
+                  const busy = row.pkg.status === "scanning" || row.pkg.status === "exporting";
 
-                return (
-                  <TableRow key={row.pkg.id} className="group relative">
-                    <TableCell className="py-3 pl-4">
-                      <Link
-                        href={`/packages/${row.pkg.id}`}
-                        className="font-medium outline-none after:absolute after:inset-0 focus-visible:underline"
-                      >
-                        {row.pkg.name}
-                      </Link>
-                      <p className="text-xs text-muted-foreground tabular-nums">
-                        {plural(row.pkg.files.length, "file")}
-                      </p>
-                    </TableCell>
-                    <TableCell className="py-3">
-                      <p>{row.recipientName}</p>
-                      <p className="text-xs text-muted-foreground">{row.profileName}</p>
-                    </TableCell>
-                    <TableCell className="py-3">
-                      <span className="inline-flex items-center gap-2">
-                        {busy ? (
-                          <Spinner className="size-3 text-muted-foreground" />
-                        ) : (
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              "size-1.5 rounded-full bg-muted-foreground/50",
-                              scanned && row.openFindings > 0 && "bg-warning",
-                              row.pkg.status === "exported" &&
-                                row.openFindings === 0 &&
-                                "bg-primary",
-                            )}
-                          />
+                  return (
+                    <TableRow key={row.pkg.id} className="group relative">
+                      <TableCell className="py-3 pl-4">
+                        <Link
+                          href={`/packages/${row.pkg.id}`}
+                          className="block font-medium break-words whitespace-normal outline-none sm:truncate after:absolute after:inset-0 focus-visible:underline"
+                        >
+                          {row.pkg.name}
+                        </Link>
+                        <p className="text-xs text-muted-foreground tabular-nums">
+                          {plural(row.pkg.files.length, "file")}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground sm:hidden">
+                          For {row.recipientName}
+                        </p>
+                      </TableCell>
+                      <TableCell className="hidden py-3 sm:table-cell">
+                        <p>{row.recipientName}</p>
+                        <p className="text-xs text-muted-foreground">{row.profileName}</p>
+                      </TableCell>
+                      <TableCell className="py-3">
+                        <span className="inline-flex items-center gap-2">
+                          {busy ? (
+                            <Spinner className="size-3 text-muted-foreground" />
+                          ) : (
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                "size-1.5 rounded-full bg-muted-foreground/50",
+                                scanned && row.openFindings > 0 && "bg-warning",
+                                row.pkg.status === "exported" &&
+                                  row.openFindings === 0 &&
+                                  "bg-primary",
+                              )}
+                            />
+                          )}
+                          {sentenceCase(row.pkg.status)}
+                        </span>
+                        <p className="mt-1 text-xs text-muted-foreground sm:hidden">
+                          {scanned ? `${row.openFindings} open findings` : "Not scanned"}
+                        </p>
+                      </TableCell>
+                      <TableCell className="hidden py-3 text-right tabular-nums sm:table-cell">
+                        {!scanned && <span className="text-muted-foreground">Not scanned</span>}
+                        {scanned && row.openFindings === 0 && (
+                          <span className="text-muted-foreground">None</span>
                         )}
-                        {sentenceCase(row.pkg.status)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-3 text-right tabular-nums">
-                      {!scanned && <span className="text-muted-foreground">Not scanned</span>}
-                      {scanned && row.openFindings === 0 && (
-                        <span className="text-muted-foreground">None</span>
-                      )}
-                      {scanned && row.openFindings > 0 && (
-                        <span className="font-medium">{row.openFindings}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="hidden py-3 text-right text-muted-foreground tabular-nums md:table-cell">
-                      {formatDateTime(row.pkg.createdAt)}
-                    </TableCell>
-                    <TableCell className="py-3 pr-4 text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="relative z-10 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
-                        aria-label={`Delete package ${row.pkg.name}`}
-                        onClick={() => setPendingDelete(row.pkg)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+                        {scanned && row.openFindings > 0 && (
+                          <span className="font-medium">{row.openFindings}</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden py-3 text-right text-muted-foreground tabular-nums md:table-cell">
+                        {formatDateTime(row.pkg.createdAt)}
+                      </TableCell>
+                      <TableCell className="py-3 pr-4 text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="relative z-10 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
+                          aria-label={`Delete package ${row.pkg.name}`}
+                          onClick={() => setPendingDelete(row.pkg)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            {visibleRows.length === 0 && (
+              <Empty className="py-12">
+                <EmptyHeader>
+                  <EmptyTitle>No matching packages</EmptyTitle>
+                  <EmptyDescription>
+                    Try another name or clear the search and filter.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setQuery("");
+                      setFilter("all");
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            )}
+          </div>
+        </section>
       )}
 
       <AlertDialog
@@ -295,7 +387,7 @@ export default function PackagesPage() {
             <AlertDialogTitle>Delete “{pendingDelete?.name}”?</AlertDialogTitle>
             <AlertDialogDescription>
               This deletes the package, its uploaded originals, its decisions, and any reviewed
-              copies. Files on your disk outside SentinelDesk are not affected.
+              copies. Files on your disk outside Cloak are not affected.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

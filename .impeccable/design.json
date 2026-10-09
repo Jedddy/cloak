@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-10-09T09:27:31.866Z",
-  "title": "Design System: SentinelDesk",
+  "title": "Design System: Cloak",
   "extensions": {
     "colorMeta": {
       "pine": {
@@ -366,7 +366,7 @@
   ],
   "narrative": {
     "northStar": "The Quiet Desk",
-    "overview": "SentinelDesk is a calm, exact, discreet workbench for a tense moment: the user is about to share a folder outside the organization. The system takes its familiarity from Notion, Figma, and Stripe Dashboard: dense but legible lists, consistent panels, data presented so that it can be trusted. Cool slate neutrals carry almost every pixel. One deep pine accent marks what the user can act on and what is selected. Evidence (highlighted quotes, solid redaction blocks, mono paths) is the most visible material on the screen, not the chrome around it.\n\nThe tool follows the system light or dark setting. Light is the reference theme for daytime desk work; dark is a full, tuned token set, not an inversion. Motion conveys state only. The tool disappears into the review task so the user can send with confidence.\n\nThe system rejects SaaS marketing tropes and neon security-ops decor: no gradient heroes, no metric tiles, no glowing alarms, no red-alarm panels.",
+    "overview": "Cloak is a calm, exact, discreet workbench for a tense moment: the user is about to share a folder outside the organization. The system takes its familiarity from Notion, Figma, and Stripe Dashboard: dense but legible lists, consistent panels, data presented so that it can be trusted. Cool slate neutrals carry almost every pixel. One deep pine accent marks what the user can act on and what is selected. Evidence (highlighted quotes, solid redaction blocks, mono paths) is the most visible material on the screen, not the chrome around it.\n\nThe tool follows the system light or dark setting. Light is the reference theme for daytime desk work; dark is a full, tuned token set, not an inversion. Motion conveys state only. The tool disappears into the review task so the user can send with confidence.\n\nThe system rejects SaaS marketing tropes and neon security-ops decor: no gradient heroes, no metric tiles, no glowing alarms, no red-alarm panels.",
     "keyCharacteristics": [
       "Product density over decoration: 14px body text, 32px controls, 6px corners",
       "Evidence-first hierarchy: what, where, why, how detected",
@@ -412,7 +412,7 @@
       }
     ],
     "dos": [
-      "Do use the shadcn tokens (`bg-primary`, `bg-muted`, `text-muted-foreground`, `border-input`) and the SentinelDesk additions (`bg-selection`, `bg-highlight`, `bg-redaction`, `text-warning`, `bg-warning-muted`) instead of raw color values.",
+      "Do use the shadcn tokens (`bg-primary`, `bg-muted`, `text-muted-foreground`, `border-input`) and the Cloak additions (`bg-selection`, `bg-highlight`, `bg-redaction`, `text-warning`, `bg-warning-muted`) instead of raw color values.",
       "Do keep Pine on 10% or less of any screen: primary actions, selection, focus, and the reviewed state.",
       "Do give every interactive component all states: default, hover, focus, active, disabled, loading, error.",
       "Do pair every image-region finding with a text equivalent, and keep prose at 65–75ch.",

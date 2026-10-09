@@ -291,7 +291,7 @@ export default function NewPackagePage() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-6 py-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">New package</h1>
           <p className="text-sm text-muted-foreground">
@@ -351,7 +351,7 @@ export default function NewPackagePage() {
 
             {recipientMode === "select" && recipients.length > 0 ? (
               <Field>
-                <FieldLabel>Recipient</FieldLabel>
+                <FieldLabel htmlFor="recipient">Recipient</FieldLabel>
                 <Select
                   items={recipients.map((recipient) => ({
                     value: recipient.id,
@@ -360,7 +360,7 @@ export default function NewPackagePage() {
                   value={recipientId ?? ""}
                   onValueChange={(value: string | null) => setRecipientId(value)}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger id="recipient" className="w-full">
                     <SelectValue placeholder="Pick a recipient" />
                   </SelectTrigger>
                   <SelectContent>
@@ -387,7 +387,7 @@ export default function NewPackagePage() {
                   />
                 </Field>
                 <Field>
-                  <FieldLabel>Profile</FieldLabel>
+                  <FieldLabel htmlFor="profile">Profile</FieldLabel>
                   <Select
                     items={profiles.map((profile) => ({
                       value: profile.id,
@@ -396,7 +396,7 @@ export default function NewPackagePage() {
                     value={profileId ?? ""}
                     onValueChange={(value: string | null) => setProfileId(value)}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="profile" className="w-full">
                       <SelectValue placeholder="Pick a profile" />
                     </SelectTrigger>
                     <SelectContent>
@@ -415,7 +415,7 @@ export default function NewPackagePage() {
 
             {activeProfile && (
               <div className="rounded-lg border bg-card">
-                <div className="flex items-start justify-between gap-4 border-b px-4 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
                   <div className="flex flex-col gap-0.5">
                     <p className="text-sm font-medium">{activeProfile.name}</p>
                     {activeProfile.description && (
@@ -449,56 +449,6 @@ export default function NewPackagePage() {
                   ))}
                 </dl>
               </div>
-            )}
-          </FormSection>
-
-          <FormSection
-            title="Protected terms"
-            description="Words that are sensitive in this package only, such as a project codename. Every occurrence becomes a finding."
-          >
-            <Field>
-              <FieldLabel htmlFor="protected-term">Term</FieldLabel>
-              <InputGroup>
-                <InputGroupInput
-                  id="protected-term"
-                  value={termInput}
-                  onChange={(event) => setTermInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      addTerm();
-                    }
-                  }}
-                  placeholder="Project Juniper"
-                  autoComplete="off"
-                />
-                <InputGroupAddon align="inline-end">
-                  <InputGroupButton variant="secondary" size="xs" onClick={addTerm}>
-                    Add
-                  </InputGroupButton>
-                </InputGroupAddon>
-              </InputGroup>
-            </Field>
-            {terms.length > 0 && (
-              <ul className="flex flex-wrap gap-1.5" aria-label="Protected terms">
-                {terms.map((term) => (
-                  <li key={term}>
-                    <Badge variant="secondary" className="h-6 gap-1 pr-1 font-mono">
-                      {term}
-                      <button
-                        type="button"
-                        aria-label={`Remove term ${term}`}
-                        className="rounded-sm p-0.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-                        onClick={() =>
-                          setTerms((current) => current.filter((item) => item !== term))
-                        }
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
             )}
           </FormSection>
 
@@ -580,12 +530,62 @@ export default function NewPackagePage() {
               </div>
             )}
           </FormSection>
+
+          <FormSection
+            title="Protected terms (optional)"
+            description="Words that are sensitive in this package only, such as a project codename. Every occurrence becomes a finding."
+          >
+            <Field>
+              <FieldLabel htmlFor="protected-term">Term</FieldLabel>
+              <InputGroup>
+                <InputGroupInput
+                  id="protected-term"
+                  value={termInput}
+                  onChange={(event) => setTermInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addTerm();
+                    }
+                  }}
+                  placeholder="Project Juniper"
+                  autoComplete="off"
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton variant="secondary" size="xs" onClick={addTerm}>
+                    Add
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+            </Field>
+            {terms.length > 0 && (
+              <ul className="flex flex-wrap gap-1.5" aria-label="Protected terms">
+                {terms.map((term) => (
+                  <li key={term}>
+                    <Badge variant="secondary" className="h-6 gap-1 pr-1 font-mono">
+                      {term}
+                      <button
+                        type="button"
+                        aria-label={`Remove term ${term}`}
+                        className="rounded-sm p-0.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                        onClick={() =>
+                          setTerms((current) => current.filter((item) => item !== term))
+                        }
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </FormSection>
         </div>
       </div>
 
       <div className="sticky bottom-0 border-t bg-background">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
-          <p className="truncate text-sm text-muted-foreground">
+        <div className="mx-auto flex w-full max-w-5xl flex-col items-stretch justify-between gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
+          <p className="min-w-0 text-sm break-words text-muted-foreground">
             {name.trim() === "" ? "Untitled package" : name.trim()}
             {recipientLabel ? ` · for ${recipientLabel}` : ""}
             {" · "}
@@ -607,7 +607,7 @@ export default function NewPackagePage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>
               {editingProfile ? `Edit ${editingProfile.name}` : "Edit profile"}
@@ -621,7 +621,7 @@ export default function NewPackagePage() {
             {CategorySchema.options.map((category) => (
               <li
                 key={category}
-                className="flex items-center justify-between gap-4 border-b py-2 last:border-b-0"
+                className="flex flex-col items-start gap-2 border-b py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
               >
                 <span className="text-sm">{categoryLabel(category)}</span>
                 <ToggleGroup
@@ -635,7 +635,7 @@ export default function NewPackagePage() {
                   spacing={0}
                   size="sm"
                   aria-label={`Bucket for ${categoryLabel(category)}`}
-                  className="w-72 shrink-0 rounded-md bg-muted p-0.5"
+                  className="w-full shrink-0 rounded-md bg-muted p-0.5 sm:w-72"
                 >
                   {buckets.map((bucket) => (
                     <ToggleGroupItem

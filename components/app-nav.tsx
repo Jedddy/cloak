@@ -73,11 +73,11 @@ export function AppNav() {
     <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-sidebar px-4 sm:gap-4">
       <Link
         href="/"
-        aria-label="SentinelDesk"
+        aria-label="Cloak"
         className="flex items-center gap-2 rounded-md text-sm font-semibold tracking-tight"
       >
         <BrandMark />
-        <span className="hidden sm:inline">SentinelDesk</span>
+        <span className="hidden sm:inline">Cloak</span>
       </Link>
       <span aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
       <Suspense fallback={<NavLinkList pathname="" />}>

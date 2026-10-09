@@ -10,25 +10,25 @@ web
 
 Freelancers and small agencies (designers, developers, consultants) preparing an outbound handoff. They have no IT admin and no enterprise DLP. They share via Drive links, WeTransfer, email, chat.
 
-Their context: a folder is assembled for one specific recipient. They open SentinelDesk asking "what am I sharing by accident?" The job is to see what the package reveals to that recipient, decide per finding, and leave confident to send.
+Their context: a folder is assembled for one specific recipient. They open Cloak asking "what am I sharing by accident?" The job is to see what the package reveals to that recipient, decide per finding, and leave confident to send.
 
 Secondary users (support teams, researchers) are out of scope for the hackathon.
 
 ## Product Purpose
 
-SentinelDesk is a private review desk for outgoing files. The user assembles a sharing package for one recipient, sees what it reveals to that recipient, and creates reviewed copies before sending. Everything runs on the user's machine.
+Cloak is a private review desk for outgoing files. The user assembles a sharing package for one recipient, sees what it reveals to that recipient, and creates reviewed copies before sending. Everything runs on the user's machine.
 
 Success is a calm export: reviewed copies rebuilt with approved redactions, verification reporting "Reviewed. No open detected findings," with honest coverage of what was and was not analyzed. The demo proves local AI remains useful with the network off.
 
 ## Positioning
 
-Recipient-aware review of a full sharing package. Existing local tools (closest: Philter Desktop) redact PII from one document at a time. SentinelDesk checks a whole handoff package (screenshots, notes, config files) for what it reveals to one specific recipient: other clients, codenames, internal pricing, secrets, and PII. A recipient profile sets the suggested action. A local LLM and a vision model add context findings with exact-quote evidence. Package checks find related occurrences and inconsistent redactions across files. Export rebuilds the files and verification scans the reviewed copies again.
+Recipient-aware review of a full sharing package. Existing local tools (closest: Philter Desktop) redact PII from one document at a time. Cloak checks a whole handoff package (screenshots, notes, config files) for what it reveals to one specific recipient: other clients, codenames, internal pricing, secrets, and PII. A recipient profile sets the suggested action. A local LLM and a vision model add context findings with exact-quote evidence. Package checks find related occurrences and inconsistent redactions across files. Export rebuilds the files and verification scans the reviewed copies again.
 
-SentinelDesk does not compete on PDF or Office PII redaction; other tools support more document formats.
+Cloak does not compete on PDF or Office PII redaction; other tools support more document formats.
 
 ## Operating Context
 
-- **Use:** the user assembles one package for one recipient, scans it, reviews each finding, previews, exports a zip of reviewed copies, and sends it through their usual channel. SentinelDesk does not send anything.
+- **Use:** the user assembles one package for one recipient, scans it, reviews each finding, previews, exports a zip of reviewed copies, and sends it through their usual channel. Cloak does not send anything.
 - **Environment:** a local server and a browser on the user's PC (`http://127.0.0.1:3000`). The model is any OpenAI-compatible server on the machine or the LAN (for example Ollama or LM Studio).
 - **Evaluation:** AppBuildersPH Hackathon 2026, theme "Local AI". Judges are expected to turn off the network, check that local AI is the core of the product, and check that the reason for "local" is clear in one sentence. The demo runs on a local or LAN endpoint only, with a 3–4 minute script (overview section 23).
 - **Terminology:** `CONTEXT.md` is the glossary (package, recipient, recipient profile, finding, evidence, decision, reviewed copy, verification, coverage, mode, locality). Use its terms and avoid the terms it lists as "Avoid".
@@ -47,7 +47,7 @@ SentinelDesk does not compete on PDF or Office PII redaction; other tools suppor
 
 ## Brand Commitments
 
-**Name:** SentinelDesk.
+**Name:** Cloak.
 
 **Personality:** Calm, exact, discreet. A quiet desk tool, not an alarm panel. Voice is precise and restrained: states what was found, where, and why it matters for this recipient. No fear, no hype, no marketing fluff. Reference feel: a system utility like a file manager or disk utility — invisible craft that gets out of the way and lets evidence speak.
 

@@ -7,7 +7,7 @@ import { AppNav } from "@/components/app-nav";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "SentinelDesk",
+  title: "Cloak",
   description: "A private review desk for outgoing files.",
 };
 

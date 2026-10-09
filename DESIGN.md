@@ -1,5 +1,5 @@
 ---
-name: SentinelDesk
+name: Cloak
 description: A private review desk for outgoing files.
 colors:
   pine: "oklch(0.46 0.07 175)"
@@ -99,13 +99,13 @@ components:
     backgroundColor: "color-mix(in oklch, oklch(0.53 0.17 28) 20%, transparent)"
 ---
 
-# Design System: SentinelDesk
+# Design System: Cloak
 
 ## Overview
 
 **Creative North Star: "The Quiet Desk"**
 
-SentinelDesk is a calm, exact, discreet workbench for a tense moment: the user is about to share a folder outside the organization. The system takes its familiarity from Notion, Figma, and Stripe Dashboard: dense but legible lists, consistent panels, data presented so that it can be trusted. Cool slate neutrals carry almost every pixel. One deep pine accent marks what the user can act on and what is selected. Evidence (highlighted quotes, solid redaction blocks, mono paths) is the most visible material on the screen, not the chrome around it.
+Cloak is a calm, exact, discreet workbench for a tense moment: the user is about to share a folder outside the organization. The system takes its familiarity from Notion, Figma, and Stripe Dashboard: dense but legible lists, consistent panels, data presented so that it can be trusted. Cool slate neutrals carry almost every pixel. One deep pine accent marks what the user can act on and what is selected. Evidence (highlighted quotes, solid redaction blocks, mono paths) is the most visible material on the screen, not the chrome around it.
 
 The tool follows the system light or dark setting. Light is the reference theme for daytime desk work; dark is a full, tuned token set, not an inversion. Motion conveys state only. The tool disappears into the review task so the user can send with confidence.
 
@@ -242,7 +242,7 @@ Quiet and exact: small, flat, and clear about what they do.
 ## Do's and Don'ts
 
 ### Do:
-- **Do** use the shadcn tokens (`bg-primary`, `bg-muted`, `text-muted-foreground`, `border-input`) and the SentinelDesk additions (`bg-selection`, `bg-highlight`, `bg-redaction`, `text-warning`, `bg-warning-muted`) instead of raw color values.
+- **Do** use the shadcn tokens (`bg-primary`, `bg-muted`, `text-muted-foreground`, `border-input`) and the Cloak additions (`bg-selection`, `bg-highlight`, `bg-redaction`, `text-warning`, `bg-warning-muted`) instead of raw color values.
 - **Do** keep Pine on 10% or less of any screen: primary actions, selection, focus, and the reviewed state.
 - **Do** give every interactive component all states: default, hover, focus, active, disabled, loading, error.
 - **Do** pair every image-region finding with a text equivalent, and keep prose at 65–75ch.

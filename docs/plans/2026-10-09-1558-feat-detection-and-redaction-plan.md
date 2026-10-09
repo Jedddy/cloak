@@ -12,7 +12,7 @@ execution: code
 
 ## Goal Capsule
 
-- **Objective:** SentinelDesk finds secrets, PII, protected terms, hidden data, and metadata in a package with no model, and writes redacted copies that keep no trace of the redacted content.
+- **Objective:** Cloak finds secrets, PII, protected terms, hidden data, and metadata in a package with no model, and writes redacted copies that keep no trace of the redacted content.
 - **Owner:** Teammate B (Stream 2).
 - **Product authority:** `sentineldesk-overview.md` sections 11 (layers 1-4, profile application), 12 (merge), 13 (exact related, inconsistent warning), 14. Interfaces come from `lib/contract/` (Stream 1). Coordination rules are in `docs/plans/2026-10-09-1558-docs-team-split-plan.md`.
 - **Open blockers:** Contract v1 (hour 2). Before that, run spikes F3 and F4 and build fixtures.

@@ -1,5 +1,5 @@
 ---
-title: SentinelDesk Team Split - Plan
+title: Cloak Team Split - Plan
 type: docs
 date: 2026-10-09
 topic: team-split
@@ -7,11 +7,11 @@ artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 ---
 
-# SentinelDesk Team Split - Plan
+# Cloak Team Split - Plan
 
 ## Goal Capsule
 
-- **Objective:** Four people build the full SentinelDesk MVP (M1-M18 in `sentineldesk-overview.md`) in 24 hours, and each person works in their own folders with few merge conflicts and no waiting after hour 2.
+- **Objective:** Four people build the full Cloak MVP (M1-M18 in `sentineldesk-overview.md`) in 24 hours, and each person works in their own folders with few merge conflicts and no waiting after hour 2.
 - **Product authority:** `sentineldesk-overview.md` is the source for all product behavior. This plan only sets ownership, timeline, and merge rules. The four stream plans hold the work.
 - **Open blockers:** Contract v1 must be on `main` before the other streams merge real code (R5).
 

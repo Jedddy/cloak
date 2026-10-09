@@ -1,4 +1,4 @@
-# SentinelDesk
+# Cloak
 
 A private review desk for outgoing files. The user assembles a package for a specific recipient, sees what it reveals to that recipient, and exports reviewed copies, all on the user's machine.
 

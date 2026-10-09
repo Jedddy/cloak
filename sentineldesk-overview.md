@@ -1,4 +1,4 @@
-# SentinelDesk — Product and Technical Overview
+# Cloak — Product and Technical Overview
 
 > **Purpose of this document:** This is the complete input for development planning. It describes the product, its scope, the architecture, the data model, the AI integration, the constraints, and the known risks. It is written for an AI planning assistant and for the development team.
 >
@@ -57,11 +57,11 @@
 3. Is the reason for "local" clear in one sentence?
 4. Is the problem real, and is the user specific?
 
-**SentinelDesk's answer:** the product reviews private files before they are shared. Sending those files to a cloud AI to check them for leaks defeats the purpose. The full workflow runs on the machine, and it still works with no model at all (rules-only mode).
+**Cloak's answer:** the product reviews private files before they are shared. Sending those files to a cloud AI to check them for leaks defeats the purpose. The full workflow runs on the machine, and it still works with no model at all (rules-only mode).
 
 ### What "the cloud disappears" means for this product
 
-| Case | Effect on SentinelDesk |
+| Case | Effect on Cloak |
 |------|------------------------|
 | Outage (no internet) | Full product works. Model runs on the machine or the LAN. |
 | Policy (client NDA, privacy law, company rule forbids uploading client files) | This is the main reason the product exists. No file leaves the machine. |
@@ -72,15 +72,15 @@
 
 ## 2. Product summary
 
-**SentinelDesk is a private review desk for outgoing files. The user assembles a sharing package, sees what it reveals to a specific recipient, and creates reviewed copies before sending it. Everything runs on the user's machine.**
+**Cloak is a private review desk for outgoing files. The user assembles a sharing package, sees what it reveals to a specific recipient, and creates reviewed copies before sending it. Everything runs on the user's machine.**
 
 **The moment it serves:** *"I am about to share this folder with someone outside my organization. What am I sharing by accident?"*
 
 **Pitch (stage version):**
-> "Before you send the folder, SentinelDesk shows you what *this recipient* will see that they should not — and removes it without uploading anything."
+> "Before you send the folder, Cloak shows you what *this recipient* will see that they should not — and removes it without uploading anything."
 
 **Pitch (long version):**
-> "PII redaction tools clean personal data out of documents. SentinelDesk checks a full handoff package — screenshots, notes, and config files — for what it reveals to this recipient: other clients, secrets, and personal data. It runs on your machine, and it checks the exported copies before you send them."
+> "PII redaction tools clean personal data out of documents. Cloak checks a full handoff package — screenshots, notes, and config files — for what it reveals to this recipient: other clients, secrets, and personal data. It runs on your machine, and it checks the exported copies before you send them."
 
 ---
 
@@ -101,7 +101,7 @@ A designer prepares a handoff folder for an external contractor:
 - `spec.md` — a normal document with nothing sensitive.
 - `broken.png` — a corrupt file that cannot be read.
 
-SentinelDesk shows each problem with evidence, the user decides, and the app exports clean copies and checks them again.
+Cloak shows each problem with evidence, the user decides, and the app exports clean copies and checks them again.
 
 ### Secondary users (not for the hackathon)
 
@@ -137,7 +137,7 @@ Vendor claims (no independent review found):
 
 **Do not compete on PII redaction of PDF and Office documents.** Philter does it on more formats.
 
-| Question | Existing tools | SentinelDesk |
+| Question | Existing tools | Cloak |
 |----------|----------------|--------------|
 | What is sensitive? | Personal data (PII) | **Business confidentiality + secrets + PII** (other client names, codenames, pricing, internal URLs, API keys, tokens) |
 | Main input | Documents | **Screenshots and handoff folders** (PNG/JPEG, text, `.env`, `.json`, `.md`, logs) |
@@ -872,7 +872,7 @@ LLM_VISION_MODEL=gemma4:e4b
 5. Final demo model: Gemma 4 E4B (text + vision) or Qwen3 4B (text) + OCR only? Decide after spike F1.
 6. Which 3 recipient profile presets, with which categories in allowed / needs decision / remove?
 7. Which secret rules to port (gitleaks / secretlint), and under which license?
-8. Product name: keep "SentinelDesk"?
+8. Product name: keep "Cloak"?
 9. Which stretch features, in which order, if time remains?
 
 ### Suggested default profiles (to confirm)
