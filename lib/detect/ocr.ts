@@ -14,6 +14,10 @@ import type { createWorker } from "tesseract.js";
 
 export const OCR_LOW_CONFIDENCE_MEAN = 65;
 
+export const OCR_LOW_CONFIDENCE_WORD = 60;
+
+export const OCR_LOW_CONFIDENCE_RUN = 3;
+
 /** A recognized word before line assignment. */
 export type RawWord = {
   text: string;
@@ -111,8 +115,19 @@ export function buildOcrResult(raw: RawWord[]): OcrResult {
   }
 
   const mean = words.reduce((sum, word) => sum + word.confidence, 0) / words.length;
+  let run = 0;
+  let unreadableRun = false;
 
-  return { words, lowConfidence: mean < OCR_LOW_CONFIDENCE_MEAN };
+  for (const [index, word] of words.entries()) {
+    if (index > 0 && words[index - 1].line !== word.line) {
+      run = 0;
+    }
+
+    run = word.confidence < OCR_LOW_CONFIDENCE_WORD ? run + 1 : 0;
+    unreadableRun ||= run >= OCR_LOW_CONFIDENCE_RUN;
+  }
+
+  return { words, lowConfidence: mean < OCR_LOW_CONFIDENCE_MEAN || unreadableRun };
 }
 
 type Worker = Awaited<ReturnType<typeof createWorker>>;
@@ -138,8 +153,22 @@ async function loadWorker(): Promise<Worker> {
       // traineddata files are stored uncompressed. cachePath keeps
       // tesseract's own cache inside the workspace instead of the cwd.
       const dir = modelDir();
+      let fail: (error: Error) => void = () => undefined;
 
-      return create("eng", 1, { langPath: dir, cachePath: dir, gzip: false });
+      const failed = new Promise<never>((_resolve, reject) => {
+        fail = reject;
+      });
+
+      const worker = await create([], 1, { langPath: dir, cachePath: dir, gzip: false, errorHandler: fail });
+
+      try {
+        await Promise.race([worker.reinitialize("eng", 1), failed]);
+      } catch {
+        await worker.terminate();
+        throw new Error("The OCR language data could not be loaded.");
+      }
+
+      return worker;
     };
 
     cachedWorker = start().catch((error: Error) => {

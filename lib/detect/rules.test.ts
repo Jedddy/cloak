@@ -90,6 +90,12 @@ describe("internal-infra rules", () => {
     expect(matches("internal-hostname", "db.internal is down")).toBe(true);
     expect(matches("internal-hostname", "see example.com")).toBe(false);
     expect(matches("internal-hostname", "the development process")).toBe(false);
+    expect(matches("internal-hostname", "call localhost:3000")).toBe(true);
+  });
+
+  test("single words without a dot are not hostnames", () => {
+    expect(matches("internal-hostname", "Acme Corp - Juniper dashboard")).toBe(false);
+    expect(matches("internal-hostname", "the local team uses a dev build")).toBe(false);
   });
 });
 

@@ -311,7 +311,7 @@ export const RULES: readonly Rule[] = [
     category: "internal-infra",
     title: "Internal hostname",
     reason: "This hostname reveals internal infrastructure.",
-    source: "\\b[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\b",
+    source: "\\b(?:[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+|localhost)\\b",
     insensitive: true,
     validate: internalHostnameValid,
   },

@@ -1,6 +1,27 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { assignLines, buildOcrResult, parseTsv } from "./ocr";
+import { assignLines, buildOcrResult, ocr, parseTsv } from "./ocr";
+
+describe("ocr", () => {
+  test("rejects instead of hanging when the language data is missing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sentinel-ocr-"));
+    const previous = process.env.SENTINEL_TESSERACT_MODEL_DIR;
+
+    process.env.SENTINEL_TESSERACT_MODEL_DIR = dir;
+
+    try {
+      await expect(ocr({ fileId: "file-1", fileName: "shot.png", bytes: new Uint8Array([1, 2, 3]) })).rejects.toThrow(
+        "The OCR language data could not be loaded.",
+      );
+    } finally {
+      process.env.SENTINEL_TESSERACT_MODEL_DIR = previous;
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 15_000);
+});
 
 describe("assignLines", () => {
   test("groups overlapping rows into lines top to bottom", () => {
@@ -63,6 +84,31 @@ describe("buildOcrResult", () => {
 
     expect(result.lowConfidence).toBe(true);
     expect(result.words.map((word) => word.confidence)).toEqual([100, 0]);
+  });
+
+  test("flags a run of three unreadable words on one line when the mean is high", () => {
+    const clear = (text: string, x: number) => ({ text, confidence: 97, box: { x, y: 0, w: 20, h: 10 } });
+    const blurred = (text: string, x: number, confidence: number) => ({ text, confidence, box: { x, y: 30, w: 20, h: 10 } });
+
+    const result = buildOcrResult([
+      ...["Sprint", "board", "for", "the", "contractor", "handoff", "Acme", "Juniper"].map((text, index) => clear(text, index * 30)),
+      blurred("Hane", 0, 57),
+      blurred("dee.", 30, 22),
+      blurred("eer", 60, 29),
+      blurred("Degen", 90, 17),
+    ]);
+
+    expect(result.lowConfidence).toBe(true);
+  });
+
+  test("ignores low words that are not next to each other", () => {
+    const words = ["one", "©", "two", "|", "three", "©", "four"].map((text, index) => ({
+      text,
+      confidence: index % 2 === 1 ? 20 : 95,
+      box: { x: index * 30, y: 0, w: 20, h: 10 },
+    }));
+
+    expect(buildOcrResult([...words, ...words.map((word) => ({ ...word, confidence: 95, box: { ...word.box, y: 30 } }))]).lowConfidence).toBe(false);
   });
 
   test("drops empty words", () => {
