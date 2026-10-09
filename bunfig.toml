@@ -1,0 +1,3 @@
+[test]
+# The oxlint RuleTester tests under tools/ need Node 22+ and cannot run in bun.
+pathIgnorePatterns = ["tools/**", ".agents/**", ".claude/**", ".codex/**"]
