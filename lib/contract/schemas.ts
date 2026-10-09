@@ -234,6 +234,8 @@ export const PackageSchema = z.object({
   lastScan: ScanInfoSchema.nullable(),
   /** The user confirmed a remote model endpoint for this package (R16). */
   remoteConfirmed: z.boolean().default(false),
+  /** The last scan or export stopped with the server; cleared by the next job (KTD5). */
+  interrupted: z.boolean().default(false),
 });
 
 export type Package = z.infer<typeof PackageSchema>;

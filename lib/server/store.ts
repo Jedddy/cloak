@@ -279,6 +279,7 @@ export async function createPackage(body: PackageCreateBody): Promise<Package> {
     createdAt: new Date().toISOString(),
     lastScan: null,
     remoteConfirmed: false,
+    interrupted: false,
   };
 
   await writeJsonAtomic(workspacePaths.packageJson(pkg.id), pkg);

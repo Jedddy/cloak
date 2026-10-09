@@ -1,22 +1,29 @@
 import { ApiError } from "@/lib/contract/errors";
-import { fixtureFiles } from "@/lib/contract/fixtures";
 import { respond } from "@/lib/server/http";
+import { addOriginal } from "@/lib/server/store";
 
-// Stub (KTD3): replaced in U8.
-
-export async function POST(request: Request) {
+/** Stores one uploaded file. The UI sends files one per request (KTD4). */
+export async function POST(request: Request, context: RouteContext<"/api/packages/[id]/files">) {
   return respond(async () => {
-    const form = await request.formData();
-    const file = form.get("file");
+    const { id } = await context.params;
 
-    if (!(file instanceof File)) {
-      throw new ApiError("bad-request", "Send one file in the field `file`.");
+    let form: FormData;
+
+    try {
+      form = await request.formData();
+    } catch {
+      throw new ApiError("bad-request", "Send the file as multipart/form-data.");
     }
 
-    return Response.json({
-      ...fixtureFiles[2],
-      originalName: file.name,
-      sizeBytes: file.size,
-    });
+    const values = form.getAll("file");
+    const file = values[0];
+
+    if (values.length !== 1 || !(file instanceof File)) {
+      throw new ApiError("bad-request", "Send exactly one file per request.");
+    }
+
+    const entry = await addOriginal(id, { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+
+    return Response.json(entry);
   });
 }

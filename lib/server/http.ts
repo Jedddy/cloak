@@ -1,3 +1,5 @@
+import { openAsBlob } from "node:fs";
+
 import type { z } from "zod";
 
 import { ApiError } from "@/lib/contract/errors";
@@ -47,4 +49,28 @@ export async function readJson<Schema extends z.ZodType>(
   }
 
   return result.data;
+}
+
+/**
+ * Streams a stored file. The type comes from the stored mime, never from
+ * the upload name; nosniff keeps the browser from guessing another type.
+ */
+export async function fileResponse(path: string, mime: string): Promise<Response> {
+  let type = mime;
+
+  if (mime.startsWith("text/") || mime.endsWith("/json") || mime.endsWith("/yaml")) {
+    type = `${mime}; charset=utf-8`;
+  }
+
+  const blob = await openAsBlob(path, { type });
+
+  return new Response(blob, {
+    headers: {
+      "Content-Type": type,
+      "Content-Length": String(blob.size),
+      "Content-Disposition": "inline",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "no-store",
+    },
+  });
 }

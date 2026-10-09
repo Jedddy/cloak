@@ -208,6 +208,7 @@ export const fixturePackage: Package = {
   createdAt: "2026-10-09T07:55:00.000Z",
   lastScan: fixtureScanInfo,
   remoteConfirmed: false,
+  interrupted: false,
 };
 
 // ---------------------------------------------------------------------------

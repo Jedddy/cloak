@@ -1,28 +1,39 @@
 import { connection, type NextRequest } from "next/server";
 
-import { fixtureFiles } from "@/lib/contract/fixtures";
 import { FileUpdateBodySchema } from "@/lib/contract/schemas";
-import { readJson, respond } from "@/lib/server/http";
-import { stubFileResponse } from "@/lib/server/stub-files";
-
-// Stub (KTD3): replaced in U8.
+import { fileResponse, readJson, respond } from "@/lib/server/http";
+import { findFile } from "@/lib/server/packages";
+import { originalPath, readPackage, updatePackage } from "@/lib/server/store";
 
 type Context = RouteContext<"/api/packages/[id]/files/[fileId]">;
 
+/** Streams the original file for the viewer. */
 export async function GET(_request: NextRequest, context: Context) {
   await connection();
 
-  const { fileId } = await context.params;
+  return respond(async () => {
+    const { id, fileId } = await context.params;
+    const file = findFile(await readPackage(id), fileId);
 
-  return stubFileResponse(fileId);
+    return fileResponse(originalPath(id, file), file.mime);
+  });
 }
 
-export async function PATCH(request: NextRequest, context: Context) {
+/** Excludes a file from export, or includes it again. */
+export async function PATCH(request: Request, context: Context) {
   return respond(async () => {
-    const { fileId } = await context.params;
+    const { id, fileId } = await context.params;
     const body = await readJson(request, FileUpdateBodySchema);
-    const file = fixtureFiles.find((entry) => entry.id === fileId) ?? fixtureFiles[0];
 
-    return Response.json({ ...file, excluded: body.excluded });
+    const pkg = await updatePackage(id, (current) => {
+      findFile(current, fileId);
+
+      return {
+        ...current,
+        files: current.files.map((file) => (file.id === fileId ? { ...file, excluded: body.excluded } : file)),
+      };
+    });
+
+    return Response.json(findFile(pkg, fileId));
   });
 }
