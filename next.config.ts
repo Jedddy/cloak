@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
-  serverExternalPackages: ["tesseract.js"],
+  serverExternalPackages: ["tesseract.js", "mupdf", "pdfjs-dist"],
   turbopack: {
     rules: {
       "*.css": {
