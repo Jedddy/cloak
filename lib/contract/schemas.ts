@@ -490,6 +490,10 @@ export const JobSchema = z.object({
 
 export type Job = z.infer<typeof JobSchema>;
 
+export const OkResponseSchema = z.object({ ok: z.literal(true) });
+
+export type OkResponse = z.infer<typeof OkResponseSchema>;
+
 export const JobStartResponseSchema = z.object({ jobId: z.string() });
 
 export type JobStartResponse = z.infer<typeof JobStartResponseSchema>;
