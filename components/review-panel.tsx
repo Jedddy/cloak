@@ -68,8 +68,17 @@ function aiNote(file: FileEntry): string | null {
   return "AI analysis failed for this file.";
 }
 
-function relatedTermOf(finding: Finding): string {
-  for (const detection of finding.detections) {
+/** A vision finding with no mapped region asks the user to draw a box. */
+function needsDrawnBox(finding: Finding): boolean {
+  return (
+    finding.detections.length > 0 &&
+    finding.detections.every((detection) =>
+      detection.evidence.every((evidence) => evidence.type === "image-whole"),
+    )
+  );
+}
+
+function relatedTermOf(finding: Finding): string {  for (const detection of finding.detections) {
     for (const evidence of detection.evidence) {
       if (evidence.type === "text-span" && evidence.quote.trim() !== "") {
         return evidence.quote;
@@ -219,7 +228,7 @@ export function ReviewPanel({
     }
     setBusy(true);
     try {
-      if (selected && selected.detections.every((detection) => detection.evidence.every((evidence) => evidence.type === "image-whole"))) {
+      if (selected && needsDrawnBox(selected)) {
         await saveRegion(packageId, {
           action: "update",
           findingId: selected.id,
@@ -317,12 +326,7 @@ export function ReviewPanel({
     );
   }
 
-  const needsBox =
-    selected !== null &&
-    selected.detections.length > 0 &&
-    selected.detections.every((detection) =>
-      detection.evidence.every((evidence) => evidence.type === "image-whole"),
-    );
+  const needsBox = selected !== null && needsDrawnBox(selected);
 
   return (
     <div className="flex flex-col gap-3">

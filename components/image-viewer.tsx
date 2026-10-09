@@ -78,15 +78,14 @@ export function ImageViewer({
   } | null>(null);
   const drawing = useRef(false);
 
-  const placed: PlacedBox[] = findings.flatMap((finding) =>
-    finding.detections.flatMap((detection) =>
-      detection.evidence.flatMap((evidence, index) =>
-        evidence.type === "image-region"
-          ? [{ findingId: finding.id, box: evidence.box, index }]
-          : [],
+  const placed: PlacedBox[] = findings.flatMap((finding) => {
+    const boxes: Box[] = finding.detections.flatMap((detection) =>
+      detection.evidence.flatMap((evidence) =>
+        evidence.type === "image-region" ? [evidence.box] : [],
       ),
-    ),
-  );
+    );
+    return boxes.map((box, index) => ({ findingId: finding.id, box, index }));
+  });
 
   const drawActive = tool === "draw" || (needsBox && tool === "select");
 
