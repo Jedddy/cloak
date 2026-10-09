@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { z } from "zod";
+import { z } from "zod";
 
 import { ApiError } from "@/lib/contract/errors";
 import { fixtureProfiles } from "@/lib/contract/fixtures";
@@ -446,4 +446,25 @@ export async function readOcr(packageId: string, fileId: string): Promise<OcrRes
 
 export async function writeOcr(packageId: string, fileId: string, ocr: OcrResult): Promise<void> {
   await writeJsonAtomic(workspacePaths.ocr(packageId, fileId), OcrResultSchema.parse(ocr));
+}
+
+export async function deleteVerification(packageId: string): Promise<void> {
+  await rm(workspacePaths.verification(packageId), { force: true });
+}
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+
+/** Which reviewed/ name holds the copy of which file. Kept outside reviewed/, so it is not in the zip. */
+const ExportManifestSchema = z.array(z.object({ fileId: z.string(), name: z.string() }));
+
+export type ExportManifest = z.infer<typeof ExportManifestSchema>;
+
+export async function readExportManifest(packageId: string): Promise<ExportManifest> {
+  return (await readJsonFile(workspacePaths.exportManifest(packageId), ExportManifestSchema)) ?? [];
+}
+
+export async function writeExportManifest(packageId: string, manifest: ExportManifest): Promise<void> {
+  await writeJsonAtomic(workspacePaths.exportManifest(packageId), ExportManifestSchema.parse(manifest));
 }

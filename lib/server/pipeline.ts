@@ -349,7 +349,7 @@ async function runScan(run: ScanRun): Promise<void> {
   }
 }
 
-function remoteAllowedInDevelopment(): boolean {
+export function remoteAllowedInDevelopment(): boolean {
   return process.env.SENTINEL_ALLOW_REMOTE === "true" && process.env.NODE_ENV === "development";
 }
 

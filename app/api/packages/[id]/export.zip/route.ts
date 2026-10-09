@@ -1,21 +1,21 @@
-import JSZip from "jszip";
-import { connection } from "next/server";
+import { connection, type NextRequest } from "next/server";
 
-// Stub (KTD3): replaced in U12.
+import { buildZip } from "@/lib/server/export";
+import { respond } from "@/lib/server/http";
 
-export async function GET() {
+/** Downloads the reviewed copies of the last export. */
+export async function GET(_request: NextRequest, context: RouteContext<"/api/packages/[id]/export.zip">) {
   await connection();
 
-  const zip = new JSZip();
+  return respond(async () => {
+    const { id } = await context.params;
 
-  zip.file("spec.md", "# Spec\n\nFixture reviewed copy.\n");
-
-  const bytes = await zip.generateAsync({ type: "arraybuffer" });
-
-  return new Response(bytes, {
-    headers: {
-      "Content-Type": "application/zip",
-      "Content-Disposition": 'attachment; filename="reviewed.zip"',
-    },
+    return new Response(await buildZip(id), {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": 'attachment; filename="reviewed.zip"',
+        "Cache-Control": "no-store",
+      },
+    });
   });
 }

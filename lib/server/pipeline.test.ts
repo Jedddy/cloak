@@ -5,10 +5,9 @@ import type { AiLayer, DetectLayer, EffectiveSettings, Layers } from "@/lib/cont
 import type { FileEntry, Mode, ModeResolution } from "@/lib/contract/schemas";
 import { stubLayers } from "@/lib/contract/stubs";
 
-import { getJob } from "./jobs";
 import { analyzeFiles, startScan, type AnalysisInput } from "./pipeline";
 import { addOriginal, createPackage, readFindings, readPackage, withFindingsLock, writeFindings, writeRecipients } from "./store";
-import { expectApiError, withTempWorkspace } from "./testing";
+import { expectApiError, waitForJob, withTempWorkspace } from "./testing";
 
 const settings: EffectiveSettings = {
   baseUrl: "http://127.0.0.1:11434/v1",
@@ -226,20 +225,6 @@ describe("startScan", () => {
     return pkg;
   }
 
-  async function finished(jobId: string) {
-    for (let attempt = 0; attempt < 400; attempt += 1) {
-      const status = getJob(jobId)?.status;
-
-      if (status === "done" || status === "failed") {
-        return status;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-
-    return "timeout";
-  }
-
   function remoteLayers(): Layers {
     return {
       ...stubLayers,
@@ -264,14 +249,14 @@ describe("startScan", () => {
 
     const job = await startScan(pkg.id, { confirmRemote: false }, remoteLayers());
 
-    expect(await finished(job.id)).toBe("done");
+    expect(await waitForJob(job.id)).toBe("done");
   });
 
   test("a stub-layer scan writes findings and coverage, and a rescan keeps a decision", async () => {
     const pkg = await demoPackage();
     const first = await startScan(pkg.id, { confirmRemote: false }, stubLayers);
 
-    expect(await finished(first.id)).toBe("done");
+    expect(await waitForJob(first.id)).toBe("done");
 
     const findings = await readFindings(pkg.id);
     const secret = findings.find((finding) => finding.category === "secret");
@@ -288,7 +273,7 @@ describe("startScan", () => {
 
     const second = await startScan(pkg.id, { confirmRemote: false }, stubLayers);
 
-    expect(await finished(second.id)).toBe("done");
+    expect(await waitForJob(second.id)).toBe("done");
     expect((await readFindings(pkg.id)).find((finding) => finding.id === secret?.id)?.decision).toBe("keep");
   });
 });
