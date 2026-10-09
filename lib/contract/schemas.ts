@@ -160,9 +160,28 @@ export type RecipientUpsertBody = z.infer<typeof RecipientUpsertBodySchema>;
 // Packages and files
 // ---------------------------------------------------------------------------
 
-export const FileKindSchema = z.enum(["image", "text", "unsupported"]);
+export const FileKindSchema = z.enum(["image", "text", "document", "unsupported"]);
 
 export type FileKind = z.infer<typeof FileKindSchema>;
+
+export const DocumentFormatSchema = z.enum(["pdf", "docx", "xlsx", "pptx"]);
+
+export type DocumentFormat = z.infer<typeof DocumentFormatSchema>;
+
+export const DOCUMENT_MIMES: Record<DocumentFormat, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+/** The document format of a mime type, or null. */
+export function documentFormat(mime: string): DocumentFormat | null {
+  return DocumentFormatSchema.options.find((format) => DOCUMENT_MIMES[format] === mime) ?? null;
+}
+
+/** PDF page renders are drawn at this scale; boxes on a PDF page use render pixels. */
+export const PAGE_SCALE = 1.5;
 
 export const FileStatusSchema = z.enum([
   "pending",
@@ -283,6 +302,122 @@ export const OcrResultSchema = z.object({
 export type OcrResult = z.infer<typeof OcrResultSchema>;
 
 // ---------------------------------------------------------------------------
+// Documents
+// ---------------------------------------------------------------------------
+
+export const DocumentSectionSchema = z.object({
+  title: z.string(),
+  kind: z.enum(["flow", "grid", "page"]),
+  hidden: z.boolean(),
+  /** PDF page number for kind "page". */
+  page: z.number().int().positive().nullable(),
+  /** A paragraph, cell, or line range in the model text. */
+  items: z.array(
+    z.object({
+      start: z.number().int().nonnegative(),
+      end: z.number().int().nonnegative(),
+      label: z.string(),
+      row: z.number().int().nullable(),
+      col: z.number().int().nullable(),
+    }),
+  ),
+});
+
+export type DocumentSection = z.infer<typeof DocumentSectionSchema>;
+
+/** An OOXML text location, for redaction. */
+export const DocumentSegmentSchema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  /** Zip path, for example `word/document.xml`. */
+  part: z.string(),
+  /** Index in the part's ordered text-node list, or -1 for a whole cell. */
+  node: z.number().int(),
+  /** XLSX cell reference when the segment is a whole cell. */
+  cell: z.string().nullable(),
+});
+
+export type DocumentSegment = z.infer<typeof DocumentSegmentSchema>;
+
+export const DocumentWordSchema = z.object({
+  text: z.string(),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  /** `page:<n>` or `image:<id>`. */
+  anchor: z.string(),
+  box: BoxSchema,
+});
+
+export type DocumentWord = z.infer<typeof DocumentWordSchema>;
+
+export const HiddenItemSchema = z.object({
+  /** Stable across re-extraction of a reviewed copy. */
+  id: z.string(),
+  kind: z.enum([
+    "metadata",
+    "comment",
+    "revision",
+    "hidden-text",
+    "hidden-sheet",
+    "hidden-rows",
+    "hidden-slide",
+    "annotation",
+    "form-field",
+    "attachment",
+    "javascript",
+    "hidden-layer",
+    "external-link",
+    "off-page-text",
+    "defined-name",
+    "pivot-cache",
+  ]),
+  note: z.string(),
+  /** Identifying text used as a residue needle. */
+  quote: z.string().nullable(),
+  category: z.enum(["metadata", "hidden-data", "other-client"]),
+});
+
+export type HiddenItem = z.infer<typeof HiddenItemSchema>;
+
+export const DocumentImageSchema = z.object({
+  /** Zip part path for OOXML, `p<n>` for a PDF page that needs OCR. */
+  id: z.string(),
+  label: z.string(),
+  mime: z.string(),
+  page: z.number().int().positive().nullable(),
+});
+
+export type DocumentImage = z.infer<typeof DocumentImageSchema>;
+
+/** Width and height are in render pixels (points x PAGE_SCALE). */
+export const DocumentPageSchema = z.object({
+  width: z.number().positive(),
+  height: z.number().positive(),
+  hasTextLayer: z.boolean(),
+  type3: z.boolean(),
+  hasImages: z.boolean(),
+});
+
+export type DocumentPage = z.infer<typeof DocumentPageSchema>;
+
+/** `derived/<file-id>.document.json`: what extraction found in a document. */
+export const DocumentModelSchema = z.object({
+  format: DocumentFormatSchema,
+  text: z.string(),
+  sections: z.array(DocumentSectionSchema),
+  segments: z.array(DocumentSegmentSchema),
+  words: z.array(DocumentWordSchema),
+  hidden: z.array(HiddenItemSchema),
+  images: z.array(DocumentImageSchema),
+  notAnalysed: z.array(z.object({ label: z.string(), reason: z.string() })),
+  signed: z.boolean(),
+  /** PDF only; empty for OOXML. */
+  pages: z.array(DocumentPageSchema),
+});
+
+export type DocumentModel = z.infer<typeof DocumentModelSchema>;
+
+// ---------------------------------------------------------------------------
 // Findings
 // ---------------------------------------------------------------------------
 
@@ -298,16 +433,58 @@ export const EvidenceSchema = z.discriminatedUnion("type", [
     type: z.literal("image-region"),
     box: BoxSchema,
     quote: z.string().nullable(),
+    /** `page:<n>` or `image:<id>` for documents; absent for plain images. */
+    anchor: z.string().nullable().optional(),
   }),
-  z.object({ type: z.literal("image-whole"), note: z.string() }),
+  z.object({
+    type: z.literal("image-whole"),
+    note: z.string(),
+    anchor: z.string().nullable().optional(),
+  }),
   z.object({
     type: z.literal("file-structure"),
     note: z.string(),
     byteOffset: z.number().int().nonnegative().nullable(),
+    /** `hidden:<id>` for a hidden item, `residue:<needle>` for a residue check. */
+    anchor: z.string().nullable().optional(),
   }),
 ]);
 
 export type Evidence = z.infer<typeof EvidenceSchema>;
+
+/** Residue needles shorter than this are too short to check in a reviewed copy. */
+export const RESIDUE_MIN_NEEDLE = 3;
+
+/** The anchor of a hidden item. */
+export function hiddenAnchor(id: string): string {
+  return `hidden:${id}`;
+}
+
+/** The hidden item id of file-structure evidence anchored with `hidden:`, or null. */
+export function hiddenIdOf(evidence: Evidence): string | null {
+  if (evidence.type !== "file-structure" || !evidence.anchor?.startsWith("hidden:")) {
+    return null;
+  }
+
+  return evidence.anchor.slice("hidden:".length);
+}
+
+/** The anchor of a box on a document page (1-based). */
+export function pageAnchor(page: number): string {
+  return `page:${page}`;
+}
+
+/** The anchor of a box on an embedded document image. */
+export function imageAnchor(id: string): string {
+  return `image:${id}`;
+}
+
+/** The page number of a `page:<positive int>` anchor, or null. */
+export function pageOfAnchor(anchor: string | null | undefined): number | null {
+  const match = /^page:([1-9]\d*)$/.exec(anchor ?? "");
+
+  return match === null ? null : Number(match[1]);
+}
 
 export const DetectionSchema = z.object({
   method: DetectionMethodSchema,
@@ -379,12 +556,23 @@ export const RegionBodySchema = z.discriminatedUnion("action", [
     action: z.literal("add"),
     fileId: z.string().min(1),
     box: BoxSchema,
+    /** Required for document files: `page:<n>`. */
+    anchor: z.string().nullable().optional(),
     category: CategorySchema.default("other"),
   }),
   z.object({
     action: z.literal("update"),
     findingId: z.string().min(1),
     box: BoxSchema,
+    anchor: z.string().nullable().optional(),
+  }),
+  /** Document files only: redact a range of the extracted text. */
+  z.object({
+    action: z.literal("add-span"),
+    fileId: z.string().min(1),
+    start: z.number().int().nonnegative(),
+    end: z.number().int().positive(),
+    category: CategorySchema.default("other"),
   }),
   z.object({ action: z.literal("delete"), findingId: z.string().min(1) }),
 ]);
@@ -439,6 +627,21 @@ export const FileProblemSchema = z.object({
 
 export type FileProblem = z.infer<typeof FileProblemSchema>;
 
+export const DocumentNoteSchema = z.object({
+  fileId: z.string(),
+  kind: z.enum([
+    "not-analysed",
+    "signature-dropped",
+    "flattened",
+    "object-removed",
+    "formula-dependency",
+    "residue-skipped",
+  ]),
+  note: z.string(),
+});
+
+export type DocumentNote = z.infer<typeof DocumentNoteSchema>;
+
 export const CoverageReportSchema = z.object({
   filesTotal: z.number().int().nonnegative(),
   filesProcessed: z.number().int().nonnegative(),
@@ -457,6 +660,7 @@ export const CoverageReportSchema = z.object({
   modeFallback: z
     .object({ from: ModeSchema, atFileId: z.string(), reason: z.string() })
     .nullable(),
+  documentNotes: z.array(DocumentNoteSchema).default([]),
 });
 
 export type CoverageReport = z.infer<typeof CoverageReportSchema>;

@@ -509,6 +509,7 @@ export const fixtureCoverage: CoverageReport = {
   locality: "mock",
   models: { text: "mock-text", vision: "mock-vision" },
   modeFallback: null,
+  documentNotes: [],
 };
 
 export const fixtureJob: Job = {

@@ -3,6 +3,9 @@ import type {
   Box,
   Category,
   ConnectionTestResult,
+  DocumentFormat,
+  DocumentModel,
+  DocumentNote,
   FileEntry,
   FileKind,
   Finding,
@@ -32,8 +35,10 @@ export type StructureInput = {
   fileName: string;
   kind: Exclude<FileKind, "unsupported">;
   bytes: Uint8Array;
-  /** Decoded UTF-8 text for text files; null for images. */
+  /** Decoded UTF-8 text for text files, the model text for documents; null for images. */
   text: string | null;
+  /** The extracted model for document files; null otherwise. */
+  document: DocumentModel | null;
 };
 
 export type OcrInput = {
@@ -141,6 +146,39 @@ export type TextRedactionInput = {
   spans: TextRedactionSpan[];
 };
 
+export type DocumentExtractInput = {
+  fileName: string;
+  format: DocumentFormat;
+  bytes: Uint8Array;
+};
+
+export type DocumentImageBytes = { id: string; mime: string; bytes: Uint8Array };
+
+export type DocumentRedactionInput = {
+  fileName: string;
+  format: DocumentFormat;
+  bytes: Uint8Array;
+  /** The model the scan produced (with OCR appended). */
+  model: DocumentModel;
+  /** Text-span evidence. */
+  spans: { start: number; end: number }[];
+  /** Anchored image-region evidence. */
+  regions: { anchor: string; box: Box }[];
+  /** Hidden item ids. */
+  removeHidden: string[];
+};
+
+export type DocumentRedactionResult = {
+  bytes: Uint8Array;
+  notes: Omit<DocumentNote, "fileId">[];
+};
+
+export type DocumentResidueInput = {
+  format: DocumentFormat;
+  bytes: Uint8Array;
+  needles: string[];
+};
+
 // ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
@@ -190,8 +228,24 @@ export type RedactLayer = {
   text: (input: TextRedactionInput) => string;
 };
 
+/** PDF and Office documents: extraction, redaction, and the residue check. */
+export type DocumentLayer = {
+  /** Throws "The document cannot be read." on a corrupt file. */
+  extract: (input: DocumentExtractInput) => Promise<DocumentModel>;
+  /** Bytes for each model.images entry: embedded image bytes, or a PNG render for PDF page entries. */
+  images: (input: DocumentExtractInput & { model: DocumentModel }) => Promise<DocumentImageBytes[]>;
+  /** Appends the OCR words of one image or page as a new section, and returns a new model. */
+  withOcr: (input: { model: DocumentModel; imageId: string; ocrWords: OcrWord[] }) => DocumentModel;
+  /** PNG of a PDF page (1-based) at PAGE_SCALE. Throws for a page out of range. */
+  renderPage: (input: { bytes: Uint8Array; page: number }) => Promise<Uint8Array>;
+  redact: (input: DocumentRedactionInput) => Promise<DocumentRedactionResult>;
+  /** Needles (3 characters or more, case-insensitive) still present in the copy. */
+  residue: (input: DocumentResidueInput) => Promise<string[]>;
+};
+
 export type Layers = {
   detect: DetectLayer;
   ai: AiLayer;
   redact: RedactLayer;
+  document: DocumentLayer;
 };

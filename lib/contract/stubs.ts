@@ -48,6 +48,10 @@ function fixtureCandidates(
   });
 }
 
+function noDocumentLayer(): never {
+  throw new Error("Documents need the document layer.");
+}
+
 export const stubLayers: Layers = {
   detect: {
     structure: async (input) =>
@@ -108,5 +112,13 @@ export const stubLayers: Layers = {
 
       return content;
     },
+  },
+  document: {
+    extract: async () => noDocumentLayer(),
+    images: async () => noDocumentLayer(),
+    withOcr: (input) => input.model,
+    renderPage: async () => noDocumentLayer(),
+    redact: async () => noDocumentLayer(),
+    residue: async () => [],
   },
 };

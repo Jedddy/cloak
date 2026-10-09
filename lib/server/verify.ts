@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import type { EffectiveSettings, Layers } from "@/lib/contract/interfaces";
 import {
   NO_OPEN_FINDINGS_TEXT,
+  documentFormat,
+  type DocumentNote,
   type FileEntry,
   type Finding,
   type FindingCandidate,
@@ -27,6 +29,10 @@ export type ReviewedCopy = {
   /** The original's entry: verification findings use the original file id. */
   file: FileEntry;
   path: string;
+  /** Document copies: text approved for removal, checked again in the reviewed file. */
+  needles: string[];
+  /** Document copies: what the redactor changed or could not check. */
+  notes: DocumentNote[];
 };
 
 export type VerifyInput = {
@@ -91,8 +97,42 @@ export async function verifyReviewed(input: VerifyInput): Promise<VerifyOutput> 
 
   const newFindings: Finding[] = [];
   const matched = new Map<string, Finding>();
+  const candidates = [...analysis.candidates];
 
-  for (const candidate of analysis.candidates) {
+  for (const copy of input.copies) {
+    const format = documentFormat(copy.file.mime);
+
+    if (copy.file.kind !== "document" || format === null || copy.needles.length === 0) {
+      continue;
+    }
+
+    const bytes = new Uint8Array(await readFile(/*turbopackIgnore: true*/ copy.path));
+
+    for (const needle of await input.layers.document.residue({ format, bytes, needles: copy.needles })) {
+      // Built already profiled: a recipient allow rule must not hide leftover text.
+      candidates.push({
+        fileId: copy.file.id,
+        category: "hidden-data",
+        detections: [
+          {
+            method: "structure",
+            ruleId: "residue",
+            evidence: [
+              { type: "file-structure", note: `"${needle}" is still in the reviewed copy.`, byteOffset: null, anchor: `residue:${needle.toLowerCase()}` },
+            ],
+          },
+        ],
+        title: "Redacted text still present in the reviewed copy",
+        reason: "Text that was approved for removal is still in the reviewed file.",
+        relatedGroupId: null,
+        // Nothing on the original can be redacted for it: the user decides.
+        suggestedAction: "needs-decision",
+        allowedByRecipient: false,
+      });
+    }
+  }
+
+  for (const candidate of candidates) {
     const original = input.findings.find((finding) => sameFinding(candidate, finding));
 
     if (original !== undefined) {
@@ -115,6 +155,7 @@ export async function verifyReviewed(input: VerifyInput): Promise<VerifyOutput> 
     locality: input.resolution.locality,
     models: input.resolution.models,
     modeFallback: analysis.modeFallback,
+    documentNotes: [...analysis.documentNotes, ...input.copies.flatMap((copy) => copy.notes)],
   });
 
   let text = NO_OPEN_FINDINGS_TEXT;

@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 
+import JSZip from "jszip";
+
 import { fixtureFindings, fixtureRecipients } from "@/lib/contract/fixtures";
-import { UPLOAD_LIMITS, type Finding } from "@/lib/contract/schemas";
+import { UPLOAD_LIMITS, type DocumentModel, type Finding } from "@/lib/contract/schemas";
 
 import { workspacePaths } from "./paths";
 import {
@@ -11,14 +13,26 @@ import {
   createPackage,
   deletePackage,
   readFindings,
+  readDocument,
   readPackage,
   readProfiles,
+  writeDocument,
   writeFindings,
   writeRecipients,
 } from "./store";
 import { expectApiError, withTempWorkspace } from "./testing";
 
 withTempWorkspace();
+
+async function zipOf(paths: string[]): Promise<Uint8Array> {
+  const zip = new JSZip();
+
+  for (const path of paths) {
+    zip.file(path, "<x/>");
+  }
+
+  return zip.generateAsync({ type: "uint8array" });
+}
 
 async function newPackage() {
   await writeRecipients(fixtureRecipients);
@@ -70,12 +84,84 @@ describe("originals", () => {
     await expectApiError(addOriginal(pkg.id, { name: "f50.txt", bytes: textBytes }), "limit-reached");
   });
 
-  test("a .pdf file is stored as unsupported", async () => {
+  test("a .pdf name on non-PDF bytes is stored as unsupported", async () => {
     const pkg = await newPackage();
     const entry = await addOriginal(pkg.id, { name: "report.pdf", bytes: textBytes });
 
     expect(entry.kind).toBe("unsupported");
     expect(entry.status).toBe("unsupported");
+  });
+
+  test("an encrypted PDF is stored as unsupported with a reason", async () => {
+    const pkg = await newPackage();
+
+    const bytes = new TextEncoder().encode("%PDF-1.7\n1 0 obj\ntrailer << /Root 1 0 R /Encrypt 5 0 R >>\n%%EOF");
+    const entry = await addOriginal(pkg.id, { name: "report.pdf", bytes });
+
+    expect(entry.kind).toBe("unsupported");
+    expect(entry.failureReason).toBe("Encrypted PDF");
+  });
+
+  test("a PDF with a valid header is stored as a pending document", async () => {
+    const pkg = await newPackage();
+    const bytes = new TextEncoder().encode("%PDF-1.7\ntrailer << /Root 1 0 R >>\n%%EOF");
+    const entry = await addOriginal(pkg.id, { name: "brief.pdf", bytes });
+
+    expect([entry.kind, entry.mime, entry.status]).toEqual(["document", "application/pdf", "pending"]);
+    expect(entry.failureReason).toBeNull();
+  });
+
+  test("OOXML files are documents when the main part is present", async () => {
+    const pkg = await newPackage();
+
+    const docx = await addOriginal(pkg.id, { name: "a.docx", bytes: await zipOf(["word/document.xml"]) });
+    const xlsx = await addOriginal(pkg.id, { name: "b.xlsx", bytes: await zipOf(["xl/workbook.xml"]) });
+    const pptx = await addOriginal(pkg.id, { name: "c.pptx", bytes: await zipOf(["ppt/presentation.xml"]) });
+
+    expect([docx.kind, xlsx.kind, pptx.kind]).toEqual(["document", "document", "document"]);
+    expect(docx.mime).toContain("wordprocessingml");
+  });
+
+  test("a .docx zip without word/document.xml is stored as unsupported", async () => {
+    const pkg = await newPackage();
+
+    const entry = await addOriginal(pkg.id, { name: "a.docx", bytes: await zipOf(["xl/workbook.xml"]) });
+
+    expect(entry.kind).toBe("unsupported");
+    expect(entry.failureReason).toBe("The file name says DOCX, but the content is not a Word document.");
+  });
+
+  test("macro-enabled documents are stored as unsupported", async () => {
+    const pkg = await newPackage();
+
+    const docm = await addOriginal(pkg.id, { name: "a.docm", bytes: await zipOf(["word/document.xml"]) });
+    const withMacro = await addOriginal(pkg.id, { name: "b.docx", bytes: await zipOf(["word/document.xml", "word/vbaProject.bin"]) });
+
+    for (const entry of [docm, withMacro]) {
+      expect(entry.kind).toBe("unsupported");
+      expect(entry.failureReason).toBe("Macro-enabled documents are not supported.");
+    }
+  });
+
+  test("an encrypted .xlsx (CFB container) is stored as unsupported", async () => {
+    const pkg = await newPackage();
+    const magic = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+    const marker = new Uint8Array(Buffer.from("EncryptionInfo", "utf16le"));
+    const bytes = Uint8Array.from([...magic, 0, 0, ...marker, 0, 0]);
+    const entry = await addOriginal(pkg.id, { name: "pricing.xlsx", bytes });
+
+    expect(entry.kind).toBe("unsupported");
+    expect(entry.failureReason).toBe("Encrypted workbook");
+  });
+
+  test("legacy Office extensions are not supported", async () => {
+    const pkg = await newPackage();
+
+    for (const name of ["a.doc", "b.xls", "c.ppt"]) {
+      const entry = await addOriginal(pkg.id, { name, bytes: textBytes });
+
+      expect(entry.failureReason).toBe("This file type is not supported.");
+    }
   });
 
   test("a .png name on JPEG bytes is stored as unsupported with a reason", async () => {
@@ -151,4 +237,28 @@ test("profiles are seeded with the three presets on first read", async () => {
     "Client",
     "Public portfolio",
   ]);
+});
+
+test("a document model round-trips through derived/<file-id>.document.json", async () => {
+  const pkg = await newPackage();
+
+  const model: DocumentModel = {
+    format: "docx",
+    text: "Hello",
+    sections: [],
+    segments: [],
+    words: [],
+    hidden: [],
+    images: [],
+    notAnalysed: [],
+    signed: false,
+    pages: [],
+  };
+
+  expect(await readDocument(pkg.id, "file1")).toBeNull();
+
+  await writeDocument(pkg.id, "file1", model);
+
+  expect(await readDocument(pkg.id, "file1")).toEqual(model);
+  expect(workspacePaths.document(pkg.id, "file1")).toEndWith(join("derived", "file1.document.json"));
 });

@@ -1,16 +1,37 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { isSettled } from "@/components/decision-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { Decision, Finding } from "@/lib/contract/schemas";
 
-type Span = { start: number; end: number; findingId: string; decision: Decision };
+export type Span = { start: number; end: number; findingId: string; decision: Decision };
 
-type Segment = { text: string; spans: Span[] };
+export type Segment = { text: string; spans: Span[] };
 
-function segmentsOf(text: string, spans: Span[]): Segment[] {
+/** The text-span evidence of the findings, each tagged with its finding and decision. */
+export function spansOf(findings: Finding[]): Span[] {
+  return findings.flatMap((finding) =>
+    finding.detections.flatMap((detection) =>
+      detection.evidence.flatMap((evidence) =>
+        evidence.type === "text-span"
+          ? [
+              {
+                start: evidence.start,
+                end: evidence.end,
+                findingId: finding.id,
+                decision: finding.decision,
+              },
+            ]
+          : [],
+      ),
+    ),
+  );
+}
+
+export function segmentsOf(text: string, spans: Span[]): Segment[] {
   const points = new Set<number>([0, text.length]);
 
   for (const span of spans) {
@@ -63,6 +84,43 @@ function linesOf(segments: Segment[]): Segment[][] {
   return lines;
 }
 
+/** A highlighted run of text: one or more findings overlap it. */
+export function SegmentMark({
+  segment,
+  selectedFindingId,
+  onSelectFinding,
+  markRef,
+}: {
+  segment: Segment;
+  selectedFindingId: string | null;
+  onSelectFinding: (findingId: string) => void;
+  markRef?: (node: HTMLElement | null) => void;
+}) {
+  const selected = segment.spans.some((span) => span.findingId === selectedFindingId);
+
+  const redacted = segment.spans.every((span) => span.decision === "redact");
+
+  const settled = segment.spans.every((span) => isSettled(span.decision));
+
+  return (
+    <mark
+      ref={markRef}
+      data-selected={selected}
+      onClick={() => onSelectFinding(segment.spans[0].findingId)}
+      title={redacted ? "Approved redaction" : undefined}
+      className={cn(
+        "cursor-pointer rounded-[2px] bg-highlight/55 text-foreground transition-colors duration-150",
+        settled &&
+          "bg-transparent underline decoration-muted-foreground/50 decoration-dotted underline-offset-4",
+        redacted && "bg-redaction text-transparent",
+        selected && "bg-highlight text-foreground shadow-[inset_0_-2px_0_var(--primary)]",
+      )}
+    >
+      {segment.text}
+    </mark>
+  );
+}
+
 export function TextViewer({
   fileUrl,
   fileName,
@@ -79,6 +137,7 @@ export function TextViewer({
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const selectedRef = useRef<HTMLElement | null>(null);
+  const spans = useMemo(() => spansOf(findings), [findings]);
 
   useEffect(() => {
     let stale = false;
@@ -125,22 +184,6 @@ export function TextViewer({
     );
   }
 
-  const spans: Span[] = findings.flatMap((finding) =>
-    finding.detections.flatMap((detection) =>
-      detection.evidence.flatMap((evidence) =>
-        evidence.type === "text-span"
-          ? [
-              {
-                start: evidence.start,
-                end: evidence.end,
-                findingId: finding.id,
-                decision: finding.decision,
-              },
-            ]
-          : [],
-      ),
-    ),
-  );
 
   const lines = linesOf(segmentsOf(text, spans));
   let firstSelected = "";
@@ -173,39 +216,22 @@ export function TextViewer({
                 return <span key={index}>{segment.text}</span>;
               }
 
-              const selected = segment.spans.some((span) => span.findingId === selectedFindingId);
-
-              const redacted = segment.spans.every((span) => span.decision === "redact");
-
-              const settled = segment.spans.every(
-                (span) => span.decision !== "open" && span.decision !== "redact",
-              );
-
               const isFirstSelected = firstSelected === `${lineIndex}:${index}`;
 
               return (
-                <mark
+                <SegmentMark
                   key={index}
-                  ref={
+                  segment={segment}
+                  selectedFindingId={selectedFindingId}
+                  onSelectFinding={onSelectFinding}
+                  markRef={
                     isFirstSelected
                       ? (node) => {
                           selectedRef.current = node;
                         }
                       : undefined
                   }
-                  onClick={() => onSelectFinding(segment.spans[0].findingId)}
-                  title={redacted ? "Approved redaction" : undefined}
-                  className={cn(
-                    "cursor-pointer rounded-[2px] bg-highlight/55 text-foreground transition-colors duration-150",
-                    settled &&
-                      "bg-transparent underline decoration-muted-foreground/50 decoration-dotted underline-offset-4",
-                    redacted && "bg-redaction text-transparent",
-                    selected &&
-                      "bg-highlight text-foreground shadow-[inset_0_-2px_0_var(--primary)]",
-                  )}
-                >
-                  {segment.text}
-                </mark>
+                />
               );
             })}
           </span>

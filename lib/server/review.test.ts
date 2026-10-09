@@ -4,9 +4,13 @@ import { fixtureProfiles } from "@/lib/contract/fixtures";
 import type { Layers } from "@/lib/contract/interfaces";
 import type { Finding, FindingCandidate, Package, PackageWarning, Recipient } from "@/lib/contract/schemas";
 import { stubLayers } from "@/lib/contract/stubs";
+import { documentLayer } from "@/lib/document";
+import { buildPdf } from "@/lib/document/fixtures/pdf";
+import { buildXlsx } from "@/lib/document/fixtures/ooxml";
 
 import { decideFinding, findRelated, saveRegion } from "./review";
-import { addOriginal, createPackage, readFindings, readRecipients, updatePackage, writeFindings, writeProfiles, writeRecipients, writeOcr } from "./store";
+import { expectApiError } from "./testing";
+import { addOriginal, createPackage, readFindings, readRecipients, updatePackage, writeDocument, writeFindings, writeProfiles, writeRecipients, writeOcr } from "./store";
 import { withTempWorkspace } from "./testing";
 
 withTempWorkspace();
@@ -189,6 +193,89 @@ describe("regions", () => {
     const response = saveRegion(pkg.id, { action: "add", fileId: notesId, box: { x: 1, y: 2, w: 3, h: 4 }, category: "other" }, layers);
 
     await expect(response).rejects.toThrow();
+  });
+});
+
+describe("document selections", () => {
+  let sheetId = "";
+  let pdfId = "";
+  let text = "";
+
+  beforeEach(async () => {
+    const xlsx = await buildXlsx({ sheets: [{ name: "Summary", cells: { A1: { text: "Quarterly figures" }, A2: { text: "Secret margin" } } }] });
+    const pdf = buildPdf({ pages: [{ lines: ["one"] }, { lines: ["two"] }] });
+
+    sheetId = (await addOriginal(pkg.id, { name: "book.xlsx", bytes: xlsx })).id;
+    pdfId = (await addOriginal(pkg.id, { name: "deck.pdf", bytes: pdf })).id;
+
+    const model = await documentLayer.extract({ fileName: "book.xlsx", format: "xlsx", bytes: xlsx });
+
+    text = model.text;
+    await writeDocument(pkg.id, sheetId, model);
+    await writeDocument(pkg.id, pdfId, await documentLayer.extract({ fileName: "deck.pdf", format: "pdf", bytes: pdf }));
+  });
+
+  test("add-span creates an open manual finding with the quote and line of the range", async () => {
+    const start = text.indexOf("Secret margin");
+    const body = { action: "add-span", fileId: sheetId, start, end: start + 6, category: "internal-pricing" } as const;
+    const [created] = (await saveRegion(pkg.id, body, layers)).findings;
+
+    expect(created?.decision).toBe("open");
+    expect(created?.suggestedAction).toBe("redact");
+    expect(created?.category).toBe("internal-pricing");
+    expect(created?.detections).toEqual([
+      { method: "manual", ruleId: null, evidence: [{ type: "text-span", start, end: start + 6, line: 1, quote: "Secret" }] },
+    ]);
+    expect(await readFindings(pkg.id)).toHaveLength(1);
+  });
+
+  test("add-span rejects a range outside the text, an empty range, and a document with no model", async () => {
+    const add = (start: number, end: number, fileId = sheetId) => saveRegion(pkg.id, { action: "add-span", fileId, start, end, category: "other" }, layers);
+    const pdfOnly = (await addOriginal(pkg.id, { name: "x.pdf", bytes: buildPdf({ pages: [{ lines: ["x"] }] }) })).id;
+
+    await expectApiError(add(0, text.length + 1), "bad-request");
+    await expectApiError(add(5, 5), "bad-request");
+    await expectApiError(add(0, 1, pdfOnly), "conflict");
+    expect(await readFindings(pkg.id)).toEqual([]);
+  });
+
+  test("add-span on an image or a text file is rejected", async () => {
+    await expectApiError(saveRegion(pkg.id, { action: "add-span", fileId: shotId, start: 0, end: 1, category: "other" }, layers), "bad-request");
+    await expectApiError(saveRegion(pkg.id, { action: "add-span", fileId: notesId, start: 0, end: 1, category: "other" }, layers), "bad-request");
+  });
+
+  test("a box on a PDF needs a page anchor inside the document and keeps it on the evidence", async () => {
+    const box = { x: 1, y: 2, w: 30, h: 10 };
+    const add = (anchor?: string) => saveRegion(pkg.id, { action: "add", fileId: pdfId, box, anchor, category: "other" }, layers);
+
+    await expectApiError(add(), "bad-request");
+    await expectApiError(add("page:3"), "bad-request");
+    await expectApiError(add("page:0"), "bad-request");
+    await expectApiError(add("image:x"), "bad-request");
+
+    const [created] = (await add("page:2")).findings;
+
+    expect(created?.detections[0]?.evidence).toEqual([{ type: "image-region", box, quote: null, anchor: "page:2" }]);
+  });
+
+  test("update on a document finding needs a valid page anchor", async () => {
+    const box = { x: 1, y: 2, w: 30, h: 10 };
+    const [created] = (await saveRegion(pkg.id, { action: "add", fileId: pdfId, box, anchor: "page:1", category: "other" }, layers)).findings;
+    const findingId = created?.id ?? "";
+    const moved = { x: 5, y: 6, w: 7, h: 8 };
+
+    await expectApiError(saveRegion(pkg.id, { action: "update", findingId, box: moved }, layers), "bad-request");
+    await expectApiError(saveRegion(pkg.id, { action: "update", findingId, box: moved, anchor: "page:9" }, layers), "bad-request");
+
+    const [updated] = (await saveRegion(pkg.id, { action: "update", findingId, box: moved, anchor: "page:2" }, layers)).findings;
+
+    expect(updated?.detections[0]?.evidence).toEqual([{ type: "image-region", box: moved, quote: null, anchor: "page:2" }]);
+  });
+
+  test("a box on an Office document is rejected for lack of a page", async () => {
+    const box = { x: 1, y: 2, w: 30, h: 10 };
+
+    await expectApiError(saveRegion(pkg.id, { action: "add", fileId: sheetId, box, anchor: "page:1", category: "other" }, layers), "bad-request");
   });
 });
 

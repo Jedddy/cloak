@@ -2,6 +2,7 @@ import type {
   AiAnalysis,
   Category,
   CoverageReport,
+  DocumentNote,
   FileEntry,
   Finding,
   Locality,
@@ -21,6 +22,7 @@ export type CoverageInput = {
   locality: Locality;
   models: Models;
   modeFallback: CoverageReport["modeFallback"];
+  documentNotes?: DocumentNote[];
 };
 
 const noAiReasons: Record<Exclude<AiAnalysis, "done">, string> = {
@@ -70,5 +72,6 @@ export function buildCoverage(input: CoverageInput): CoverageReport {
     locality: input.locality,
     models: input.models,
     modeFallback: input.modeFallback,
+    documentNotes: input.documentNotes ?? [],
   };
 }

@@ -3,6 +3,7 @@ import { openAsBlob } from "node:fs";
 import type { z } from "zod";
 
 import { ApiError } from "@/lib/contract/errors";
+import { documentFormat, type FileEntry } from "@/lib/contract/schemas";
 
 /** Runs a route body and turns every failure into the shared error body. */
 export async function respond(run: () => Promise<Response>): Promise<Response> {
@@ -73,4 +74,20 @@ export async function fileResponse(path: string, mime: string): Promise<Response
       "Cache-Control": "no-store",
     },
   });
+}
+
+/** The 1-based page number of a PDF file's page route; anything else is a missing page. */
+export function pdfPageParam(file: FileEntry, pageParam: string): number {
+  const page = Number(pageParam);
+
+  if (documentFormat(file.mime) !== "pdf" || !Number.isInteger(page) || page < 1) {
+    throw new ApiError("not-found", "No such page.");
+  }
+
+  return page;
+}
+
+/** A page render as a PNG response. */
+export function pngResponse(bytes: Uint8Array): Response {
+  return new Response(bytes.slice(), { headers: { "Content-Type": "image/png", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" } });
 }

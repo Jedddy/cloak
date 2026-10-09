@@ -1,6 +1,7 @@
 import { ApiErrorSchema, type ApiErrorBody } from "@/lib/contract/errors";
 import type {
   ConnectionTestResult,
+  DocumentModel,
   ExportStartBody,
   FileEntry,
   FileUpdateBody,
@@ -144,6 +145,17 @@ export function originalFileUrl(id: string, fileId: string): string {
   return `/api/packages/${encode(id)}/files/${encode(fileId)}`;
 }
 
+export function getFileDocument(id: string, fileId: string): Promise<DocumentModel> {
+  return requestJson<DocumentModel>(
+    `/api/packages/${encode(id)}/files/${encode(fileId)}/document`,
+  );
+}
+
+/** PNG of a PDF page, 1-based. */
+export function filePageUrl(id: string, fileId: string, page: number): string {
+  return `/api/packages/${encode(id)}/files/${encode(fileId)}/pages/${page}`;
+}
+
 export function updateFile(
   id: string,
   fileId: string,
@@ -222,4 +234,15 @@ export function exportZipUrl(id: string): string {
 
 export function reviewedFileUrl(id: string, fileId: string): string {
   return `/api/packages/${encode(id)}/reviewed/${encode(fileId)}`;
+}
+
+export function getReviewedDocument(id: string, fileId: string): Promise<DocumentModel> {
+  return requestJson<DocumentModel>(
+    `/api/packages/${encode(id)}/reviewed/${encode(fileId)}/document`,
+  );
+}
+
+/** PNG of a page of the reviewed PDF, 1-based. */
+export function reviewedPageUrl(id: string, fileId: string, page: number): string {
+  return `/api/packages/${encode(id)}/reviewed/${encode(fileId)}/pages/${page}`;
 }

@@ -34,3 +34,7 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Third-party licenses
+
+PDF parsing, rendering, and redaction use [MuPDF.js](https://mupdf.com/) (`mupdf`), which is licensed under the **AGPL-3.0**. Cloak runs on the user's own machine and its source is open, which meets the AGPL terms. Anyone who offers a modified Cloak as a network service must publish their changes under the AGPL too. Reviewed PDFs are checked again with [PDF.js](https://mozilla.github.io/pdf.js/) (`pdfjs-dist`, Apache-2.0), and Office files are parsed with `jszip` (MIT/GPLv3) and `@xmldom/xmldom` (MIT).

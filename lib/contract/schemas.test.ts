@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  CoverageReportSchema,
   FileEntrySchema,
   FindingSchema,
   ScanStartBodySchema,
@@ -88,4 +89,42 @@ test("SettingsResponseSchema rejects an extra apiKey field", () => {
 
 test("ScanStartBodySchema defaults confirmRemote to false", () => {
   expect(ScanStartBodySchema.parse({})).toEqual({ confirmRemote: false });
+});
+
+test("image-region evidence saved without an anchor still parses, with a null anchor", () => {
+  const finding = FindingSchema.parse({
+    ...baseFinding,
+    detections: [
+      {
+        method: "ocr-rule",
+        ruleId: null,
+        evidence: [{ type: "image-region", box: { x: 1, y: 2, w: 3, h: 4 }, quote: null }],
+      },
+    ],
+  });
+
+  const evidence = finding.detections[0]?.evidence[0];
+
+  expect(evidence?.type === "image-region" ? (evidence.anchor ?? null) : "wrong type").toBeNull();
+});
+
+test("a coverage report saved without documentNotes parses with an empty list", () => {
+  const report = {
+    filesTotal: 0,
+    filesProcessed: 0,
+    filesFailed: [],
+    filesUnsupported: [],
+    filesExcluded: [],
+    filesWithoutAi: [],
+    filesLowConfidenceOcr: [],
+    findingsOpen: 0,
+    findingsByCategory: {},
+    llmQuotesDropped: 0,
+    mode: "rules-only",
+    locality: "mock",
+    models: { text: null, vision: null },
+    modeFallback: null,
+  };
+
+  expect(CoverageReportSchema.parse(report).documentNotes).toEqual([]);
 });

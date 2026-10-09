@@ -16,7 +16,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { ClientError, exportZipUrl, startExport } from "@/lib/client/client";
-import type { Category, Job, PackageDetail } from "@/lib/contract/schemas";
+import type { Category, DocumentNote, Job, PackageDetail } from "@/lib/contract/schemas";
 import {
   categoryLabel,
   cn,
@@ -132,34 +132,63 @@ export function ExportPanel({
       </span>
     );
 
+  // Before export the scan's notes apply; after it, what export changed in the documents.
+  const noteKinds: DocumentNote["kind"][] = verification
+    ? ["flattened", "object-removed", "formula-dependency", "residue-skipped"]
+    : ["not-analysed", "signature-dropped"];
+
+  const documentNotes = (coverage?.documentNotes ?? []).filter((note) =>
+    noteKinds.includes(note.kind),
+  );
+
   return (
     <div className="flex w-full max-w-4xl flex-col gap-8 px-6 py-6">
       <section className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold tracking-tight">Export reviewed copies</h2>
-            <p className="max-w-prose text-sm text-muted-foreground">
-              Export rebuilds every included file with solid-fill redactions, strips metadata, and
-              scans the copies again. The originals stay unchanged.
-            </p>
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold tracking-tight">Export reviewed copies</h2>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Export rebuilds every included file with solid-fill redactions, strips metadata, and
+            scans the copies again. The originals stay unchanged.
+          </p>
+        </div>
+
+        {documentNotes.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium">
+              {verification ? "What export changed in documents" : "Not covered in documents"}
+            </h3>
+            <ul className="overflow-hidden rounded-lg border bg-card">
+              {documentNotes.map((note, index) => (
+                <li
+                  key={index}
+                  className="flex flex-col gap-0.5 border-b px-4 py-2.5 text-sm last:border-b-0 sm:flex-row sm:gap-4"
+                >
+                  <span className="shrink-0 font-mono text-[0.8125rem] sm:w-48 sm:truncate">
+                    {fileNameOf(files, note.fileId)}
+                  </span>
+                  <span className="min-w-0 flex-1">{note.note}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant={exported ? "outline" : "default"}
-              onClick={() => run(false)}
-              disabled={starting || running}
-            >
-              {(starting || running) && <Spinner data-icon="inline-start" />}
-              {running && "Exporting…"}
-              {!running && (exported ? "Export again" : "Export reviewed copies")}
-            </Button>
-            {exported && !running && (
-              <a href={exportZipUrl(packageId)} className={buttonVariants()}>
-                <Download data-icon="inline-start" />
-                Download zip
-              </a>
-            )}
-          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant={exported ? "outline" : "default"}
+            onClick={() => run(false)}
+            disabled={starting || running}
+          >
+            {(starting || running) && <Spinner data-icon="inline-start" />}
+            {running && "Exporting…"}
+            {!running && (exported ? "Export again" : "Export reviewed copies")}
+          </Button>
+          {exported && !running && (
+            <a href={exportZipUrl(packageId)} className={buttonVariants()}>
+              <Download data-icon="inline-start" />
+              Download zip
+            </a>
+          )}
         </div>
 
         <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm">

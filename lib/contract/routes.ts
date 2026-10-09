@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   ConnectionTestResultSchema,
+  DocumentModelSchema,
   ExportStartBodySchema,
   FileEntrySchema,
   FileUpdateBodySchema,
@@ -132,6 +133,18 @@ export const apiRoutes = {
     body: null,
     response: OcrResultSchema,
   },
+  getFileDocument: {
+    method: "GET",
+    path: "/api/packages/[id]/files/[fileId]/document",
+    body: null,
+    response: DocumentModelSchema,
+  },
+  getFilePage: {
+    method: "GET",
+    path: "/api/packages/[id]/files/[fileId]/pages/[page]",
+    body: null,
+    response: "binary",
+  },
   startScan: {
     method: "POST",
     path: "/api/packages/[id]/scan",
@@ -177,6 +190,18 @@ export const apiRoutes = {
   getReviewedFile: {
     method: "GET",
     path: "/api/packages/[id]/reviewed/[fileId]",
+    body: null,
+    response: "binary",
+  },
+  getReviewedDocument: {
+    method: "GET",
+    path: "/api/packages/[id]/reviewed/[fileId]/document",
+    body: null,
+    response: DocumentModelSchema,
+  },
+  getReviewedPage: {
+    method: "GET",
+    path: "/api/packages/[id]/reviewed/[fileId]/pages/[page]",
     body: null,
     response: "binary",
   },

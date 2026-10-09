@@ -24,14 +24,14 @@ async function scanImage(path: string): Promise<FindingCandidate[]> {
   const bytes = new Uint8Array(await readFile(path));
   const name = path.split("/").pop() ?? path;
 
-  return structure({ fileId: name, fileName: name, kind: "image", bytes, text: null });
+  return structure({ fileId: name, fileName: name, kind: "image", bytes, text: null, document: null });
 }
 
 async function scanText(path: string): Promise<FindingCandidate[]> {
   const bytes = new Uint8Array(await readFile(path));
   const text = utf8.decode(bytes);
   const name = path.split("/").pop() ?? path;
-  const found = await structure({ fileId: name, fileName: name, kind: "text", bytes, text });
+  const found = await structure({ fileId: name, fileName: name, kind: "text", bytes, text, document: null });
 
   return [
     ...found,

@@ -7,12 +7,16 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
+import { isSettled } from "@/components/decision-state";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Box, Decision, Finding } from "@/lib/contract/schemas";
 import { SquareDashedMousePointer, Trash2 } from "lucide-react";
 
 type PlacedBox = { findingId: string; box: Box; index: number; decision: Decision };
+
+/** A box that belongs to a finding but is not editable here, such as a located text span. */
+export type TextBox = { findingId: string; box: Box; decision: Decision };
 
 type Fraction = { x: number; y: number; w: number; h: number };
 
@@ -46,23 +50,34 @@ function styleOf(rect: Fraction): CSSProperties {
 export function ImageViewer({
   imageUrl,
   fileName,
+  label,
+  anchor,
   findings,
+  textBoxes = [],
   selectedFindingId,
   needsBox,
   onSelectFinding,
   onDraw,
   onMove,
   onDeleteBox,
+  lazyAspect,
 }: {
   imageUrl: string;
   fileName: string;
+  /** Names the image in the toolbar, for example a PDF page. */
+  label?: string;
+  /** When set, only regions with this anchor are drawn, for example `page:2`. */
+  anchor?: string;
   findings: Finding[];
+  textBoxes?: TextBox[];
   selectedFindingId: string | null;
   needsBox: boolean;
   onSelectFinding: (findingId: string) => void;
   onDraw: (box: Box) => void;
   onMove: (findingId: string, box: Box) => void;
   onDeleteBox: (findingId: string) => void;
+  /** Loads the image lazily and reserves its space from these pixel dimensions. */
+  lazyAspect?: { width: number; height: number };
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
@@ -84,7 +99,9 @@ export function ImageViewer({
   const placed: PlacedBox[] = findings.flatMap((finding) => {
     const boxes: Box[] = finding.detections.flatMap((detection) =>
       detection.evidence.flatMap((evidence) =>
-        evidence.type === "image-region" ? [evidence.box] : [],
+        evidence.type === "image-region" && (anchor === undefined || evidence.anchor === anchor)
+          ? [evidence.box]
+          : [],
       ),
     );
 
@@ -251,13 +268,17 @@ export function ImageViewer({
     (finding) =>
       finding.id === selectedFindingId &&
       finding.detections.some((detection) =>
-        detection.evidence.some((evidence) => evidence.type === "image-region"),
+        detection.evidence.some(
+          (evidence) =>
+            evidence.type === "image-region" && (anchor === undefined || evidence.anchor === anchor),
+        ),
       ),
   );
 
   return (
     <div className="flex flex-col">
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1.5 border-b bg-sheet/95 px-3 py-1.5">
+        {label && <span className="mr-1 text-xs font-medium">{label}</span>}
         <Button
           variant={tool === "draw" ? "default" : "ghost"}
           size="xs"
@@ -305,11 +326,35 @@ export function ImageViewer({
             alt={fileName}
             className="block h-auto w-auto max-w-full"
             draggable={false}
+            {...(lazyAspect && {
+              loading: "lazy",
+              decoding: "async",
+              style: {
+                width: lazyAspect.width,
+                aspectRatio: `${lazyAspect.width} / ${lazyAspect.height}`,
+              },
+            })}
             onLoad={(event) => {
               const img = event.currentTarget;
               setNatural({ w: img.naturalWidth, h: img.naturalHeight });
             }}
           />
+          {natural &&
+            textBoxes.map((item, index) => (
+              <div
+                key={`text-${item.findingId}-${index}`}
+                onClick={() => onSelectFinding(item.findingId)}
+                title={item.decision === "redact" ? "Approved redaction" : undefined}
+                className={cn(
+                  "absolute cursor-pointer border border-warning bg-warning/10 transition-colors duration-150",
+                  isSettled(item.decision) &&
+                    "border-dashed border-muted-foreground bg-transparent",
+                  item.decision === "redact" && "border-redaction bg-redaction",
+                  item.findingId === selectedFindingId && "border-primary ring-2 ring-primary/30",
+                )}
+                style={styleOf(toFraction(item.box, natural))}
+              />
+            ))}
           {natural &&
             visible.map((item) => {
               const rect =
@@ -320,7 +365,7 @@ export function ImageViewer({
                   : toFraction(item.box, natural);
 
               const selected = item.findingId === selectedFindingId;
-              const settled = item.decision !== "open" && item.decision !== "redact";
+              const settled = isSettled(item.decision);
 
               return (
                 <div

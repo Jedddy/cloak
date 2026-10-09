@@ -2,12 +2,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import JSZip from "jszip";
 import { z } from "zod";
 
 import { ApiError } from "@/lib/contract/errors";
 import { fixtureProfiles } from "@/lib/contract/fixtures";
 import {
   CoverageReportSchema,
+  DOCUMENT_MIMES,
+  DocumentFormatSchema,
+  DocumentModelSchema,
   FindingSchema,
   OcrResultSchema,
   PackageSchema,
@@ -17,6 +21,8 @@ import {
   UPLOAD_LIMITS,
   VerificationResultSchema,
   type CoverageReport,
+  type DocumentFormat,
+  type DocumentModel,
   type FileEntry,
   type FileKind,
   type Finding,
@@ -328,10 +334,30 @@ const pngMagic = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 const jpegMagic = [0xff, 0xd8, 0xff];
 
-/** Supported kinds follow M4: extension, plus a magic-byte check for images. */
-function detectKind(extension: string, bytes: Uint8Array): KindResult {
+const pdfMagic = [0x25, 0x50, 0x44, 0x46, 0x2d];
+
+const zipMagic = [0x50, 0x4b, 0x03, 0x04];
+
+const cfbMagic = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+
+const macroReason = "Macro-enabled documents are not supported.";
+
+const macroExtensions: ReadonlySet<string> = new Set(["docm", "xlsm", "pptm"]);
+
+/** Per OOXML format: the part that proves it, the mismatch wording, and the encrypted-file reason. */
+type OoxmlFormat = { mainPart: string; label: string; encrypted: string };
+
+const ooxmlFormats: ReadonlyMap<DocumentFormat, OoxmlFormat> = new Map([
+  ["docx", { mainPart: "word/document.xml", label: "DOCX, but the content is not a Word document", encrypted: "Encrypted document" }],
+  ["xlsx", { mainPart: "xl/workbook.xml", label: "XLSX, but the content is not an Excel workbook", encrypted: "Encrypted workbook" }],
+  ["pptx", { mainPart: "ppt/presentation.xml", label: "PPTX, but the content is not a PowerPoint presentation", encrypted: "Encrypted presentation" }],
+]);
+
+/** Supported kinds follow M4: extension, plus a content check for images and documents. */
+async function detectKind(extension: string, bytes: Uint8Array): Promise<KindResult> {
   const textMime = textMimes.get(extension);
   const unsupported = "application/octet-stream";
+  const reject = (reason: string): KindResult => ({ kind: "unsupported", mime: unsupported, reason });
 
   if (textMime !== undefined) {
     return { kind: "text", mime: textMime, reason: null };
@@ -353,6 +379,59 @@ function detectKind(extension: string, bytes: Uint8Array): KindResult {
     return { kind: "unsupported", mime: unsupported, reason: "The file name says JPEG, but the content is not JPEG." };
   }
 
+  if (extension === "pdf") {
+    if (!startsWith(bytes, pdfMagic)) {
+      return reject("The file name says PDF, but the content is not PDF.");
+    }
+
+    if (Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).includes("/Encrypt", 0, "latin1")) {
+      return reject("Encrypted PDF");
+    }
+
+    return { kind: "document", mime: DOCUMENT_MIMES.pdf, reason: null };
+  }
+
+  if (macroExtensions.has(extension)) {
+    return reject(macroReason);
+  }
+
+  const format = DocumentFormatSchema.safeParse(extension).data;
+  const ooxml = format === undefined ? undefined : ooxmlFormats.get(format);
+
+  if (format !== undefined && ooxml !== undefined) {
+    const mismatch = reject(`The file name says ${ooxml.label}.`);
+
+    if (startsWith(bytes, cfbMagic)) {
+      if (Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).includes(Buffer.from("EncryptionInfo", "utf16le"))) {
+        return reject(ooxml.encrypted);
+      }
+
+      return mismatch;
+    }
+
+    if (!startsWith(bytes, zipMagic)) {
+      return mismatch;
+    }
+
+    let zip: JSZip;
+
+    try {
+      zip = await JSZip.loadAsync(bytes);
+    } catch {
+      return mismatch;
+    }
+
+    if (zip.file(ooxml.mainPart) === null) {
+      return mismatch;
+    }
+
+    if (Object.keys(zip.files).some((name) => name.endsWith("vbaProject.bin"))) {
+      return reject(macroReason);
+    }
+
+    return { kind: "document", mime: DOCUMENT_MIMES[format], reason: null };
+  }
+
   return { kind: "unsupported", mime: unsupported, reason: "This file type is not supported." };
 }
 
@@ -363,7 +442,7 @@ export async function addOriginal(packageId: string, upload: Upload): Promise<Fi
   }
 
   const extension = storedExtension(upload.name);
-  const kind = detectKind(extension, upload.bytes);
+  const kind = await detectKind(extension, upload.bytes);
 
   const entry: FileEntry = {
     id: `file-${randomUUID()}`,
@@ -446,6 +525,36 @@ export async function readOcr(packageId: string, fileId: string): Promise<OcrRes
 
 export async function writeOcr(packageId: string, fileId: string, ocr: OcrResult): Promise<void> {
   await writeJsonAtomic(workspacePaths.ocr(packageId, fileId), OcrResultSchema.parse(ocr));
+}
+
+export async function readDocument(packageId: string, fileId: string): Promise<DocumentModel | null> {
+  return readJsonFile(workspacePaths.document(packageId, fileId), DocumentModelSchema);
+}
+
+export async function writeDocument(packageId: string, fileId: string, model: DocumentModel): Promise<void> {
+  await writeJsonAtomic(workspacePaths.document(packageId, fileId), DocumentModelSchema.parse(model));
+}
+
+/** The cached PNG render of a PDF page (1-based), or null. */
+export async function readPageRender(packageId: string, fileId: string, page: number): Promise<Uint8Array | null> {
+  try {
+    return new Uint8Array(await readFile(workspacePaths.pageRender(packageId, fileId, page)));
+  } catch (error) {
+    if (error instanceof Error && isMissing(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function writePageRender(packageId: string, fileId: string, page: number, png: Uint8Array): Promise<void> {
+  const path = workspacePaths.pageRender(packageId, fileId, page);
+  const temp = `${path}.${randomUUID()}.tmp`;
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(temp, png);
+  await rename(temp, path);
 }
 
 export async function deleteVerification(packageId: string): Promise<void> {

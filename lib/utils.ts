@@ -194,3 +194,77 @@ export function hostnameOf(url: string): string | null {
     return null;
   }
 }
+
+/** Text for comparing needles: trimmed, whitespace collapsed to single spaces, lowercased. */
+export function normalizeText(text: string): string {
+  return text.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** The spreadsheet column name of a 1-based column number: 1 is "A", 27 is "AA". */
+export function columnName(oneBased: number): string {
+  let name = "";
+
+  for (let rest = oneBased; rest > 0; rest = Math.floor((rest - 1) / 26)) {
+    name = String.fromCharCode(65 + ((rest - 1) % 26)) + name;
+  }
+
+  return name;
+}
+
+/** The 1-based column number of a column name (any case): "A" is 1, "AA" is 27. */
+export function columnNumber(letters: string): number {
+  let number = 0;
+
+  for (const letter of letters.toUpperCase()) {
+    number = number * 26 + letter.charCodeAt(0) - 64;
+  }
+
+  return number;
+}
+
+const wordCharacter = /[\p{L}\p{N}]/u;
+
+/**
+ * True when `needle` occurs in `text` (both already passed through `normalizeText`) with no letter or digit
+ * right before it or right after it, on the sides where the needle itself starts or ends with one.
+ */
+export function containsWord(text: string, needle: string): boolean {
+  if (needle === "") {
+    return false;
+  }
+
+  const checkBefore = wordCharacter.test(needle.at(0)!);
+  const checkAfter = wordCharacter.test(needle.at(-1)!);
+
+  for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) {
+    const before = text.charAt(at - 1);
+    const after = text.charAt(at + needle.length);
+
+    if ((checkBefore && at > 0 && wordCharacter.test(before)) || (checkAfter && wordCharacter.test(after))) {
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+const XML_ENTITIES = new Map([
+  ["amp", "&"],
+  ["lt", "<"],
+  ["gt", ">"],
+  ["quot", '"'],
+  ["apos", "'"],
+]);
+
+/** Decodes the five named XML entities and numeric character references; an unknown named entity becomes empty. */
+export function decodeXmlEntities(text: string): string {
+  return text.replace(/&(?:#x([0-9a-f]+)|#(\d+)|(amp|lt|gt|quot|apos));/gi, (_, hex, dec, name) => {
+    if (name) {
+      return XML_ENTITIES.get(name.toLowerCase()) ?? "";
+    }
+
+    return String.fromCodePoint(Number.parseInt(hex ?? dec, hex ? 16 : 10));
+  });
+}

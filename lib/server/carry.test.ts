@@ -87,3 +87,36 @@ test("a box the user drew on a vision finding stays through a rescan", () => {
   expect(carried?.detections.map((detection) => detection.method)).toEqual(["llm-vision", "manual"]);
   expect(carried?.decision).toBe("redact");
 });
+
+function hiddenCandidate(anchor: string): ProfiledCandidate {
+  return {
+    fileId: "file-1",
+    category: "hidden-data",
+    detections: [
+      {
+        method: "structure",
+        ruleId: "document-comment",
+        evidence: [{ type: "file-structure", note: "Comment by J. Cruz", byteOffset: null, anchor }],
+      },
+    ],
+    title: "Comment by J. Cruz",
+    reason: "Hidden content.",
+    suggestedAction: "needs-decision",
+    allowedByRecipient: false,
+    relatedGroupId: null,
+  };
+}
+
+test("hidden items with different anchors do not take each other's decision", () => {
+  const old = [asFinding(hiddenCandidate("hidden:comment-1"), "keep")];
+  const [carried] = carryDecisions([hiddenCandidate("hidden:comment-2")], old);
+
+  expect(carried?.decision).toBe("open");
+});
+
+test("a hidden item with the same anchor keeps its decision", () => {
+  const old = [asFinding(hiddenCandidate("hidden:comment-1"), "keep")];
+  const [carried] = carryDecisions([hiddenCandidate("hidden:comment-1")], old);
+
+  expect(carried?.decision).toBe("keep");
+});
