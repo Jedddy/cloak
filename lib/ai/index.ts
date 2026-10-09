@@ -43,7 +43,7 @@ async function connection(input: ConnectionInput) {
     };
   }
 
-  const shortSettings = { ...settings, timeoutMs: Math.min(settings.timeoutMs, 3000) };
+  const shortSettings = { ...settings, timeoutMs: Math.min(settings.timeoutMs, 15_000) };
   let models: string[];
 
   try {

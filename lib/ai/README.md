@@ -12,8 +12,8 @@ Text above 200 KiB of UTF-8 bytes is skipped. Vision input is resized inside
 Text findings with no source match are dropped. Visual findings with no matching
 OCR quote require a manually drawn box (`image-whole` evidence).
 
-All HTTP calls share one serial queue. Connection probes use at most 3 seconds
-per request; analysis uses `timeoutMs` from settings. The deadline includes queue
+All HTTP calls share one serial queue. Connection probes use at most 15 seconds
+per request (remote endpoints such as OpenRouter often take more than 3 s); analysis uses `timeoutMs` from settings. The deadline includes queue
 wait and response-body parsing; expired queued requests never reach the server.
 Transport failures throw
 sanitized errors so the existing pipeline falls back to rules-only. Two invalid
