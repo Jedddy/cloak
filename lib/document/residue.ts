@@ -1,8 +1,7 @@
 import type { DocumentResidueInput } from "@/lib/contract/interfaces";
 import { RESIDUE_MIN_NEEDLE } from "@/lib/contract/schemas";
 import { containsWord, decodeXmlEntities, normalizeText } from "@/lib/utils";
-import { createRequire } from "node:module";
-import { dirname } from "node:path";
+import { join } from "node:path";
 import { inflateSync } from "node:zlib";
 import JSZip from "jszip";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -10,21 +9,17 @@ import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 // Independent residue check (KTD6): searches a reviewed copy for text that
 // should be gone, using pdfjs (not MuPDF) and a raw look at the strings of every stream.
 
-let pdfjsAssets: { cMapUrl: string; standardFontDataUrl: string } | undefined;
+/**
+ * CMaps and standard fonts shipped with the installed pdfjs-dist, read from disk (no network). Resolved from the
+ * working directory because the bundler rewrites require.resolve to a module id; node_modules sits there in every
+ * deployment (see Dockerfile).
+ */
+const pdfjsRoot = join(/*turbopackIgnore: true*/ process.cwd(), "node_modules", "pdfjs-dist");
 
-/** Directories of the CMaps and standard fonts shipped with the installed pdfjs-dist, read from disk (no network). */
-function pdfjsAssetUrls() {
-  if (pdfjsAssets === undefined) {
-    const root = dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
-
-    pdfjsAssets = { cMapUrl: `${root}/cmaps/`, standardFontDataUrl: `${root}/standard_fonts/` };
-  }
-
-  return pdfjsAssets;
-}
+const pdfjsAssets = { cMapUrl: `${pdfjsRoot}/cmaps/`, standardFontDataUrl: `${pdfjsRoot}/standard_fonts/` };
 
 async function pdfjsTexts(bytes: Uint8Array): Promise<string[]> {
-  const task = getDocument({ data: bytes.slice(), disableFontFace: true, verbosity: 0, cMapPacked: true, ...pdfjsAssetUrls() });
+  const task = getDocument({ data: bytes.slice(), disableFontFace: true, verbosity: 0, cMapPacked: true, ...pdfjsAssets });
 
   try {
     const doc = await task.promise;
