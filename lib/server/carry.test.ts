@@ -72,3 +72,18 @@ test("manual findings stay through a rescan", () => {
 
   expect(carryDecisions([], [manual])).toEqual([manual]);
 });
+
+test("a box the user drew on a vision finding stays through a rescan", () => {
+  const whole: ProfiledCandidate = {
+    ...regionCandidate(0),
+    category: "unreleased-work",
+    detections: [{ method: "llm-vision", ruleId: null, evidence: [{ type: "image-whole", note: "Sidebar." }] }],
+  };
+
+  const box = { method: "manual" as const, ruleId: null, evidence: [{ type: "image-region" as const, box: { x: 0, y: 0, w: 50, h: 400 }, quote: null }] };
+  const old: Finding = { ...whole, id: "fnd-old", decision: "redact", detections: [...whole.detections, box] };
+  const [carried] = carryDecisions([whole], [old]);
+
+  expect(carried?.detections.map((detection) => detection.method)).toEqual(["llm-vision", "manual"]);
+  expect(carried?.decision).toBe("redact");
+});

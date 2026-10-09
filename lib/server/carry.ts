@@ -34,6 +34,13 @@ function fingerprints(finding: FindingCandidate): Set<string> {
   );
 }
 
+/** Same file, same category, and at least one shared evidence fingerprint. */
+export function sharesEvidence(left: FindingCandidate, right: FindingCandidate): boolean {
+  const keys = fingerprints(left);
+
+  return [...fingerprints(right)].some((key) => keys.has(key));
+}
+
 function isManual(finding: Finding): boolean {
   return finding.detections.every((detection) => detection.method === "manual");
 }
@@ -49,16 +56,17 @@ export function carryDecisions(candidates: ProfiledCandidate[], previous: Findin
   const manual = previous.filter(isManual);
 
   const carried = candidates.map((candidate): Finding => {
-    const keys = fingerprints(candidate);
-    const index = unmatched.findIndex((finding) => [...fingerprints(finding)].some((key) => keys.has(key)));
+    const index = unmatched.findIndex((finding) => sharesEvidence(candidate, finding));
+    const [match] = index === -1 ? [] : unmatched.splice(index, 1);
 
-    if (index === -1) {
+    if (match === undefined) {
       return { ...candidate, id: `fnd-${randomUUID()}`, decision: "open" };
     }
 
-    const [match] = unmatched.splice(index, 1);
+    // A box the user drew on a layer finding (for example image-whole) stays.
+    const manualBoxes = match.detections.filter((detection) => detection.method === "manual");
 
-    return { ...candidate, id: match?.id ?? `fnd-${randomUUID()}`, decision: match?.decision ?? "open" };
+    return { ...candidate, detections: [...candidate.detections, ...manualBoxes], id: match.id, decision: match.decision };
   });
 
   return [...carried, ...manual];

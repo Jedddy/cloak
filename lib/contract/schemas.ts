@@ -367,6 +367,13 @@ export const FindingDecisionBodySchema = z.object({
 
 export type FindingDecisionBody = z.infer<typeof FindingDecisionBodySchema>;
 
+/**
+ * POST .../regions. `add` creates a manual finding (method `manual`).
+ * `update` on a manual finding moves its box; on any other finding (for
+ * example a vision finding with only `image-whole` evidence) it sets the
+ * box that export redacts (M9, M12). `delete` removes a manual finding,
+ * or the manual box of another finding.
+ */
 export const RegionBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("add"),

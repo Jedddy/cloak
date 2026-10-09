@@ -1,18 +1,14 @@
-import { fixtureFindings, fixtureWarnings } from "@/lib/contract/fixtures";
 import { RegionBodySchema } from "@/lib/contract/schemas";
 import { readJson, respond } from "@/lib/server/http";
+import { layers } from "@/lib/server/layers";
+import { saveRegion } from "@/lib/server/review";
 
-// Stub (KTD3): replaced in U11.
-
-export async function POST(request: Request) {
+/** Adds, moves, or deletes a manual region (M12). */
+export async function POST(request: Request, context: RouteContext<"/api/packages/[id]/regions">) {
   return respond(async () => {
+    const { id } = await context.params;
     const body = await readJson(request, RegionBodySchema);
-    const manual = fixtureFindings.find((finding) => finding.id === "fnd-shot1-manual");
 
-    if (body.action === "delete" || manual === undefined) {
-      return Response.json({ findings: [], warnings: fixtureWarnings });
-    }
-
-    return Response.json({ findings: [manual], warnings: fixtureWarnings });
+    return Response.json(await saveRegion(id, body, layers));
   });
 }

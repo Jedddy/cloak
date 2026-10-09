@@ -73,7 +73,7 @@ export type AnalysisResult = {
 };
 
 /** OCR words as text: words of a line joined by spaces, lines by newlines. */
-function ocrText(words: OcrWord[]): string {
+export function ocrText(words: OcrWord[]): string {
   const lines = new Map<number, string[]>();
 
   for (const word of words) {
