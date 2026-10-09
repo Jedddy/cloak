@@ -1,0 +1,16 @@
+.git
+node_modules
+.next
+workspace
+.env*
+!.env.example
+*.tsbuildinfo
+next-env.d.ts
+Dockerfile
+.dockerignore
+.agents
+.claude
+.codex
+.devin
+.impeccable
+.husky
