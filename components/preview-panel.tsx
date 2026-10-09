@@ -2,12 +2,11 @@
 
 import { useState } from "react";
 
-import { DocumentViewer } from "@/components/document-viewer";
+import { DocumentLoadState, DocumentViewer } from "@/components/document-viewer";
 import { FileList } from "@/components/file-list";
 import { TextViewer } from "@/components/text-viewer";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useDocumentModel } from "@/components/use-document-model";
+import { useDocumentModel, type DocumentModelState } from "@/components/use-document-model";
 import {
   filePageUrl,
   getFileDocument,
@@ -16,7 +15,7 @@ import {
   reviewedFileUrl,
   reviewedPageUrl,
 } from "@/lib/client/client";
-import type { DocumentModel, FileEntry, PackageDetail } from "@/lib/contract/schemas";
+import type { FileEntry, PackageDetail } from "@/lib/contract/schemas";
 
 function Pane({
   title,
@@ -26,8 +25,7 @@ function Pane({
   detail,
   showFindings,
   available,
-  documentModel,
-  documentError,
+  document,
   pageUrl,
 }: {
   title: string;
@@ -37,10 +35,11 @@ function Pane({
   detail: PackageDetail;
   showFindings: boolean;
   available: boolean;
-  documentModel: DocumentModel | null;
-  documentError: string | null;
+  document: DocumentModelState;
   pageUrl: (page: number) => string;
 }) {
+  const documentModel = document.model;
+
   // PDF pages show no marks here, Office documents and text do.
   const marked = file.kind === "text" || (documentModel !== null && documentModel.format !== "pdf");
 
@@ -87,24 +86,21 @@ function Pane({
             onSelectFinding={() => undefined}
           />
         )}
-        {available && file.kind === "document" && documentError && (
-          <p className="p-4 text-sm text-destructive">{documentError}</p>
-        )}
-        {available && file.kind === "document" && !documentError && !documentModel && (
-          <div className="flex flex-col gap-2 p-4">
-            <Skeleton className="h-3.5 w-3/4" />
-            <Skeleton className="h-3.5 w-1/2" />
-            <Skeleton className="h-3.5 w-2/3" />
-          </div>
-        )}
+        {available && file.kind === "document" && <DocumentLoadState state={document} />}
         {available && documentModel?.format === "pdf" && (
           <div className="flex flex-col gap-4 p-4">
-            {documentModel.pages.map((_, index) => (
+            {documentModel.pages.map((pageSize, index) => (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 key={index}
                 src={pageUrl(index + 1)}
                 alt={`${title}: ${file.originalName}, page ${index + 1}`}
+                loading="lazy"
+                decoding="async"
+                style={{
+                  width: pageSize.width,
+                  aspectRatio: `${pageSize.width} / ${pageSize.height}`,
+                }}
                 className="mx-auto block h-auto max-w-full ring-1 ring-border"
               />
             ))}
@@ -192,8 +188,7 @@ export function PreviewPanel({ packageId, detail }: { packageId: string; detail:
             detail={detail}
             showFindings
             available
-            documentModel={original.model}
-            documentError={original.error}
+            document={original}
             pageUrl={(page) => filePageUrl(packageId, file.id, page)}
           />
           <Pane
@@ -204,8 +199,7 @@ export function PreviewPanel({ packageId, detail }: { packageId: string; detail:
             detail={detail}
             showFindings={false}
             available={hasReviewed}
-            documentModel={reviewed.model}
-            documentError={reviewed.error}
+            document={reviewed}
             pageUrl={(page) => reviewedPageUrl(packageId, file.id, page)}
           />
         </div>

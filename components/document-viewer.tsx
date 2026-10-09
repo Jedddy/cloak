@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { SegmentMark, segmentsOf, type Span } from "@/components/text-viewer";
+import { SegmentMark, segmentsOf, spansOf, type Span } from "@/components/text-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -15,22 +16,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { DocumentModelState } from "@/components/use-document-model";
 import type { DocumentModel, DocumentSection, Finding } from "@/lib/contract/schemas";
-import { cn } from "@/lib/utils";
+import { cn, columnName } from "@/lib/utils";
 import { TextSelect } from "lucide-react";
 
 type Item = DocumentSection["items"][number];
-
-/** A1-style column letters for a zero-based column. */
-function columnName(col: number): string {
-  let name = "";
-
-  for (let rest = col + 1; rest > 0; rest = Math.floor((rest - 1) / 26)) {
-    name = String.fromCharCode(65 + ((rest - 1) % 26)) + name;
-  }
-
-  return name;
-}
 
 /** The model text offset of a point in the view, or null outside every item. */
 function offsetOf(container: HTMLElement, node: Node, offset: number): number | null {
@@ -118,6 +109,10 @@ function SectionBody({
 
   const columns = Math.max(0, ...section.items.map((item) => (item.col ?? 0) + 1));
 
+  const itemAt = new Map(
+    section.items.map((item) => [`${item.row ?? 0},${item.col ?? 0}`, item] as const),
+  );
+
   const rows = Array.from(new Set(section.items.map((item) => item.row ?? 0))).sort(
     (left, right) => left - right,
   );
@@ -129,7 +124,7 @@ function SectionBody({
           <TableRow>
             <TableHead className="w-10" />
             {Array.from({ length: columns }, (_, col) => (
-              <TableHead key={col}>{columnName(col)}</TableHead>
+              <TableHead key={col}>{columnName(col + 1)}</TableHead>
             ))}
           </TableRow>
         </TableHeader>
@@ -138,9 +133,7 @@ function SectionBody({
             <TableRow key={row}>
               <TableHead className="text-right tabular-nums">{row + 1}</TableHead>
               {Array.from({ length: columns }, (_, col) => {
-                const item = section.items.find(
-                  (candidate) => (candidate.row ?? 0) === row && (candidate.col ?? 0) === col,
-                );
+                const item = itemAt.get(`${row},${col}`);
 
                 if (!item) {
                   return <TableCell key={col} />;
@@ -171,6 +164,25 @@ function SectionBody({
   );
 }
 
+/** The error or the placeholder of a document model that has not loaded; nothing once it has. */
+export function DocumentLoadState({ state }: { state: DocumentModelState }) {
+  if (state.error) {
+    return <p className="p-4 text-sm text-destructive">{state.error}</p>;
+  }
+
+  if (!state.model) {
+    return (
+      <div className="flex flex-col gap-2 p-4">
+        <Skeleton className="h-3.5 w-3/4" />
+        <Skeleton className="h-3.5 w-1/2" />
+        <Skeleton className="h-3.5 w-2/3" />
+      </div>
+    );
+  }
+
+  return null;
+}
+
 export function DocumentViewer({
   model,
   findings,
@@ -193,22 +205,7 @@ export function DocumentViewer({
     index: 0,
   });
 
-  const spans: Span[] = findings.flatMap((finding) =>
-    finding.detections.flatMap((detection) =>
-      detection.evidence.flatMap((evidence) =>
-        evidence.type === "text-span"
-          ? [
-              {
-                start: evidence.start,
-                end: evidence.end,
-                findingId: finding.id,
-                decision: finding.decision,
-              },
-            ]
-          : [],
-      ),
-    ),
-  );
+  const spans = useMemo(() => spansOf(findings), [findings]);
 
   // Sheets are tabs. A tab the user picked stays until another finding is selected.
   const selectedStart = spans.find((span) => span.findingId === selectedFindingId)?.start;

@@ -7,6 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
+import { isSettled } from "@/components/decision-state";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Box, Decision, Finding } from "@/lib/contract/schemas";
@@ -59,6 +60,7 @@ export function ImageViewer({
   onDraw,
   onMove,
   onDeleteBox,
+  lazyAspect,
 }: {
   imageUrl: string;
   fileName: string;
@@ -74,6 +76,8 @@ export function ImageViewer({
   onDraw: (box: Box) => void;
   onMove: (findingId: string, box: Box) => void;
   onDeleteBox: (findingId: string) => void;
+  /** Loads the image lazily and reserves its space from these pixel dimensions. */
+  lazyAspect?: { width: number; height: number };
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
@@ -322,6 +326,14 @@ export function ImageViewer({
             alt={fileName}
             className="block h-auto w-auto max-w-full"
             draggable={false}
+            {...(lazyAspect && {
+              loading: "lazy",
+              decoding: "async",
+              style: {
+                width: lazyAspect.width,
+                aspectRatio: `${lazyAspect.width} / ${lazyAspect.height}`,
+              },
+            })}
             onLoad={(event) => {
               const img = event.currentTarget;
               setNatural({ w: img.naturalWidth, h: img.naturalHeight });
@@ -335,8 +347,7 @@ export function ImageViewer({
                 title={item.decision === "redact" ? "Approved redaction" : undefined}
                 className={cn(
                   "absolute cursor-pointer border border-warning bg-warning/10 transition-colors duration-150",
-                  item.decision !== "open" &&
-                    item.decision !== "redact" &&
+                  isSettled(item.decision) &&
                     "border-dashed border-muted-foreground bg-transparent",
                   item.decision === "redact" && "border-redaction bg-redaction",
                   item.findingId === selectedFindingId && "border-primary ring-2 ring-primary/30",
@@ -354,7 +365,7 @@ export function ImageViewer({
                   : toFraction(item.box, natural);
 
               const selected = item.findingId === selectedFindingId;
-              const settled = item.decision !== "open" && item.decision !== "redact";
+              const settled = isSettled(item.decision);
 
               return (
                 <div

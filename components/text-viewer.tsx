@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { isSettled } from "@/components/decision-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { Decision, Finding } from "@/lib/contract/schemas";
@@ -9,6 +10,26 @@ import type { Decision, Finding } from "@/lib/contract/schemas";
 export type Span = { start: number; end: number; findingId: string; decision: Decision };
 
 export type Segment = { text: string; spans: Span[] };
+
+/** The text-span evidence of the findings, each tagged with its finding and decision. */
+export function spansOf(findings: Finding[]): Span[] {
+  return findings.flatMap((finding) =>
+    finding.detections.flatMap((detection) =>
+      detection.evidence.flatMap((evidence) =>
+        evidence.type === "text-span"
+          ? [
+              {
+                start: evidence.start,
+                end: evidence.end,
+                findingId: finding.id,
+                decision: finding.decision,
+              },
+            ]
+          : [],
+      ),
+    ),
+  );
+}
 
 export function segmentsOf(text: string, spans: Span[]): Segment[] {
   const points = new Set<number>([0, text.length]);
@@ -79,9 +100,7 @@ export function SegmentMark({
 
   const redacted = segment.spans.every((span) => span.decision === "redact");
 
-  const settled = segment.spans.every(
-    (span) => span.decision !== "open" && span.decision !== "redact",
-  );
+  const settled = segment.spans.every((span) => isSettled(span.decision));
 
   return (
     <mark
@@ -118,6 +137,7 @@ export function TextViewer({
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const selectedRef = useRef<HTMLElement | null>(null);
+  const spans = useMemo(() => spansOf(findings), [findings]);
 
   useEffect(() => {
     let stale = false;
@@ -164,22 +184,6 @@ export function TextViewer({
     );
   }
 
-  const spans: Span[] = findings.flatMap((finding) =>
-    finding.detections.flatMap((detection) =>
-      detection.evidence.flatMap((evidence) =>
-        evidence.type === "text-span"
-          ? [
-              {
-                start: evidence.start,
-                end: evidence.end,
-                findingId: finding.id,
-                decision: finding.decision,
-              },
-            ]
-          : [],
-      ),
-    ),
-  );
 
   const lines = linesOf(segmentsOf(text, spans));
   let firstSelected = "";

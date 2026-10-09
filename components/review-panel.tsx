@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { FileList } from "@/components/file-list";
-import { DocumentViewer } from "@/components/document-viewer";
+import { DocumentLoadState, DocumentViewer } from "@/components/document-viewer";
 import { DecisionMark, FindingRow } from "@/components/finding-card";
 import { ImageViewer } from "@/components/image-viewer";
 import { PdfViewer } from "@/components/pdf-viewer";
@@ -27,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useDocumentModel } from "@/components/use-document-model";
 import {
@@ -85,9 +84,11 @@ export function ReviewPanel({
   const documentKey =
     selectedFile?.kind === "document" ? `${selectedFile.id}:${detail.package.status}` : null;
 
-  const { model: documentModel, error: documentError } = useDocumentModel(documentKey, () =>
+  const documentState = useDocumentModel(documentKey, () =>
     getFileDocument(packageId, selectedFile?.id ?? ""),
   );
+
+  const documentModel = documentState.model;
 
   const fileFindings = useMemo(
     () =>
@@ -422,16 +423,7 @@ export function ReviewPanel({
                 onDeleteBox={deleteBox}
               />
             )}
-            {selectedFile.kind === "document" && documentError && (
-              <p className="p-4 text-sm text-destructive">{documentError}</p>
-            )}
-            {selectedFile.kind === "document" && !documentError && !documentModel && (
-              <div className="flex flex-col gap-2 p-4">
-                <Skeleton className="h-3.5 w-3/4" />
-                <Skeleton className="h-3.5 w-1/2" />
-                <Skeleton className="h-3.5 w-2/3" />
-              </div>
-            )}
+            {selectedFile.kind === "document" && <DocumentLoadState state={documentState} />}
             {documentModel?.format === "pdf" && (
               <PdfViewer
                 key={selectedFile.id}

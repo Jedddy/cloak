@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import { ImageViewer, type TextBox } from "@/components/image-viewer";
-import type { Box, DocumentModel, Finding } from "@/lib/contract/schemas";
+import { pageAnchor, pageOfAnchor, type Box, type DocumentModel, type Finding } from "@/lib/contract/schemas";
 
 /** Words on the same line when they share more than half of the shorter height. */
 function sameLine(left: Box, right: Box): boolean {
@@ -30,11 +30,12 @@ function textBoxesByPage(model: DocumentModel, findings: Finding[]): Map<number,
             continue;
           }
 
-          if (!word.anchor.startsWith("page:")) {
+          const page = pageOfAnchor(word.anchor);
+
+          if (page === null) {
             continue;
           }
 
-          const page = Number(word.anchor.slice("page:".length));
           const last = lines[lines.length - 1];
 
           if (last && last.page === page && sameLine(last.box, word.box)) {
@@ -53,10 +54,10 @@ function textBoxesByPage(model: DocumentModel, findings: Finding[]): Map<number,
         }
 
         for (const line of lines) {
-          byPage.set(line.page, [
-            ...(byPage.get(line.page) ?? []),
-            { findingId: finding.id, box: line.box, decision: finding.decision },
-          ]);
+          const boxes = byPage.get(line.page) ?? [];
+
+          boxes.push({ findingId: finding.id, box: line.box, decision: finding.decision });
+          byPage.set(line.page, boxes);
         }
       }
     }
@@ -69,16 +70,19 @@ function textBoxesByPage(model: DocumentModel, findings: Finding[]): Map<number,
 function pageOfFinding(model: DocumentModel, finding: Finding | undefined): number | null {
   for (const evidence of finding?.detections.flatMap((detection) => detection.evidence) ?? []) {
     if (evidence.type === "text-span") {
-      const word = model.words.find(
-        (item) =>
-          item.anchor.startsWith("page:") && item.end > evidence.start && item.start < evidence.end,
-      );
+      for (const item of model.words) {
+        const page = pageOfAnchor(item.anchor);
 
-      if (word) {
-        return Number(word.anchor.slice("page:".length));
+        if (page !== null && item.end > evidence.start && item.start < evidence.end) {
+          return page;
+        }
       }
-    } else if (evidence.anchor?.startsWith("page:")) {
-      return Number(evidence.anchor.slice("page:".length));
+    } else {
+      const page = pageOfAnchor(evidence.anchor);
+
+      if (page !== null) {
+        return page;
+      }
     }
   }
 
@@ -122,9 +126,9 @@ export function PdfViewer({
 
   return (
     <div className="flex flex-col divide-y">
-      {model.pages.map((_, index) => {
+      {model.pages.map((pageSize, index) => {
         const page = index + 1;
-        const anchor = `page:${page}`;
+        const anchor = pageAnchor(page);
 
         // A finding that only has a whole-page region asks for a box on that page.
         const pageNeedsBox =
@@ -151,6 +155,7 @@ export function PdfViewer({
             <ImageViewer
               imageUrl={pageUrl(page)}
               fileName={`${fileName}, page ${page}`}
+              lazyAspect={pageSize}
               label={`Page ${page}`}
               anchor={anchor}
               findings={findings}
