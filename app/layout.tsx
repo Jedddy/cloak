@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import "@fontsource-variable/inter/wght.css";
+import "@fontsource-variable/jetbrains-mono/wght.css";
 import "./globals.css";
 
 import { AppNav } from "@/components/app-nav";
@@ -12,11 +14,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="flex min-h-full flex-col">
+      <body className="flex h-dvh flex-col overflow-hidden">
         <AppNav />
-        <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-          {children}
-        </div>
+        <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
         <Toaster />
       </body>
     </html>

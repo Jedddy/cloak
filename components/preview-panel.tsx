@@ -1,124 +1,143 @@
 "use client";
 
-import { TextViewer } from "@/components/text-viewer";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  originalFileUrl,
-  reviewedFileUrl,
-} from "@/lib/client/client";
-import type { PackageDetail } from "@/lib/contract/schemas";
+import { useState } from "react";
 
-export function PreviewPanel({
-  packageId,
+import { FileList } from "@/components/file-list";
+import { TextViewer } from "@/components/text-viewer";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { originalFileUrl, reviewedFileUrl } from "@/lib/client/client";
+import type { FileEntry, PackageDetail } from "@/lib/contract/schemas";
+
+function Pane({
+  title,
+  description,
+  file,
+  url,
   detail,
+  showFindings,
+  available,
 }: {
-  packageId: string;
+  title: string;
+  description: string;
+  file: FileEntry;
+  url: string;
   detail: PackageDetail;
+  showFindings: boolean;
+  available: boolean;
 }) {
-  const hasReviewed =
-    detail.package.status === "exported" || detail.verification !== null;
+  return (
+    <section aria-label={title} className="flex min-h-0 min-w-0 flex-col bg-sheet">
+      <header className="flex h-10 shrink-0 items-baseline gap-2 border-b px-4 pt-2.5">
+        <h3 className="text-sm font-medium">{title}</h3>
+        <span className="truncate text-xs text-muted-foreground">
+          {description}
+          {showFindings && file.kind === "text" && ", with findings marked"}
+        </span>
+      </header>
+      <div className="min-h-[20rem] flex-1 overflow-auto lg:min-h-0">
+        {!available && (
+          <Empty className="h-full">
+            <EmptyHeader>
+              <EmptyTitle>No reviewed copy yet</EmptyTitle>
+              <EmptyDescription>
+                Export the package to rebuild this file with the approved redactions. The copy
+                appears here after export.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
+        {available && file.kind === "image" && (
+          <div className="p-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={url}
+              alt={`${title}: ${file.originalName}`}
+              className="mx-auto block h-auto max-w-full ring-1 ring-border"
+            />
+          </div>
+        )}
+        {available && file.kind === "text" && (
+          <TextViewer
+            key={url}
+            fileUrl={url}
+            fileName={file.originalName}
+            findings={
+              showFindings ? detail.findings.filter((finding) => finding.fileId === file.id) : []
+            }
+            selectedFindingId={null}
+            onSelectFinding={() => undefined}
+          />
+        )}
+        {available && file.kind === "unsupported" && (
+          <p className="p-4 text-sm text-muted-foreground">Not supported: no preview.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export function PreviewPanel({ packageId, detail }: { packageId: string; detail: PackageDetail }) {
+  const files = detail.package.files;
+  const [fileId, setFileId] = useState(files[0]?.id ?? "");
+  const file = files.find((item) => item.id === fileId) ?? files[0];
+
+  const hasReviewed = detail.package.status === "exported" || detail.verification !== null;
+
+  if (!file) {
+    return null;
+  }
 
   return (
-    <div className="flex flex-col gap-3">
-      {!hasReviewed && (
-        <p className="text-sm text-muted-foreground">
-          Reviewed copies appear here after the first export. The left side
-          always shows the original.
-        </p>
+    <div className="grid grid-cols-1 lg:h-full lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <section
+        aria-label="Files"
+        className="flex min-h-0 flex-col border-b bg-sidebar lg:border-r lg:border-b-0"
+      >
+        <header className="flex h-10 shrink-0 items-center justify-between border-b px-4">
+          <h2 className="text-sm font-medium">Files</h2>
+          <span className="text-xs text-muted-foreground tabular-nums">{files.length}</span>
+        </header>
+        <div className="max-h-72 min-h-0 flex-1 overflow-y-auto lg:max-h-none">
+          <FileList
+            files={files}
+            findings={detail.findings}
+            selectedId={file.id}
+            onSelect={setFileId}
+          />
+        </div>
+      </section>
+
+      {file.excluded ? (
+        <Empty className="bg-sheet">
+          <EmptyHeader>
+            <EmptyTitle>Excluded from export</EmptyTitle>
+            <EmptyDescription>
+              This file is not part of the reviewed copies. The recipient does not receive it.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <div className="grid min-h-0 grid-cols-1 divide-y md:grid-cols-2 md:divide-x md:divide-y-0">
+          <Pane
+            title="Original"
+            description="Read-only"
+            file={file}
+            url={originalFileUrl(packageId, file.id)}
+            detail={detail}
+            showFindings
+            available
+          />
+          <Pane
+            title="Reviewed copy"
+            description="What the recipient receives"
+            file={file}
+            url={reviewedFileUrl(packageId, file.id)}
+            detail={detail}
+            showFindings={false}
+            available={hasReviewed}
+          />
+        </div>
       )}
-      {detail.package.files.map((file) => (
-        <Card key={file.id}>
-          <CardHeader>
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="font-mono text-sm font-medium">
-                {file.originalName}
-              </CardTitle>
-              {file.excluded && <Badge variant="outline">excluded</Badge>}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {file.excluded ? (
-              <p className="text-sm text-muted-foreground">
-                Excluded from export. It will not be part of the reviewed
-                copies.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Original
-                  </p>
-                  {file.kind === "image" ? (
-                    <div className="overflow-auto rounded-lg border border-border bg-sheet">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={originalFileUrl(packageId, file.id)}
-                        alt={`Original ${file.originalName}`}
-                        className="block max-h-[50vh] w-auto max-w-full"
-                      />
-                    </div>
-                  ) : file.kind === "text" ? (
-                    <div className="rounded-lg border border-border bg-sheet p-3">
-                      <TextViewer
-                        fileUrl={originalFileUrl(packageId, file.id)}
-                        fileName={file.originalName}
-                        findings={detail.findings.filter(
-                          (finding) => finding.fileId === file.id,
-                        )}
-                        selectedFindingId={null}
-                        onSelectFinding={() => undefined}
-                      />
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Not supported: no preview.
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Reviewed copy
-                  </p>
-                  {!hasReviewed ? (
-                    <p className="text-sm text-muted-foreground">
-                      Not exported yet.
-                    </p>
-                  ) : file.kind === "image" ? (
-                    <div className="overflow-auto rounded-lg border border-border bg-sheet">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={reviewedFileUrl(packageId, file.id)}
-                        alt={`Reviewed ${file.originalName}`}
-                        className="block max-h-[50vh] w-auto max-w-full"
-                      />
-                    </div>
-                  ) : file.kind === "text" ? (
-                    <div className="rounded-lg border border-border bg-sheet p-3">
-                      <TextViewer
-                        fileUrl={reviewedFileUrl(packageId, file.id)}
-                        fileName={file.originalName}
-                        findings={[]}
-                        selectedFindingId={null}
-                        onSelectFinding={() => undefined}
-                      />
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Not supported: no preview.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
     </div>
   );
 }

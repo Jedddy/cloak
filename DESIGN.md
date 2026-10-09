@@ -154,7 +154,7 @@ Restrained: a cool slate ramp (hue 250–255, chroma under 0.02) plus one deep p
 **Body Font:** Inter (with ui-sans-serif, system-ui)
 **Mono Font:** JetBrains Mono (with ui-monospace)
 
-**Character:** Inter is a neutral, highly legible product sans that sets dense lists without noise. JetBrains Mono gives evidence quotes, file paths, SHA-256 hashes, and byte offsets a clear, unambiguous face (0/O and 1/l are distinct). Both load through `next/font/google` as `--font-inter` and `--font-jetbrains-mono`.
+**Character:** Inter is a neutral, highly legible product sans that sets dense lists without noise. JetBrains Mono gives evidence quotes, file paths, SHA-256 hashes, and byte offsets a clear, unambiguous face (0/O and 1/l are distinct). Both are bundled locally through `@fontsource-variable/inter` and `@fontsource-variable/jetbrains-mono` (imported in `app/layout.tsx`), so the app loads no remote fonts at runtime or build time. `--font-sans` and `--font-mono` in `app/globals.css` name them first.
 
 ### Hierarchy
 - **Display** (600, 1.5rem, 1.25): the page title only, for example the package name. One per screen.
@@ -192,7 +192,40 @@ Small, precise corners. The base radius is 6px (`--radius: 0.375rem`). Buttons a
 
 ## Components
 
-Only the Button exists in code (`components/ui/button.tsx`, shadcn `base-nova` style on Base UI). Document the finding row, evidence viewer, badge, input, and navigation when they are in the code. Do not invent variants before then.
+Primitives are shadcn `base-nova` on Base UI in `components/ui/`. Product components are in `components/`. Labels for categories, detection methods, decisions, and statuses come from `lib/utils.ts` (`categoryLabel`, `methodLabel`, `decisionLabel`, `sentenceCase`). Raw slugs never reach the screen.
+
+### App header
+- **Shell:** full-width, 48px, Panel layer with a 1px Rule below (`components/app-nav.tsx`). The main area below is the scroll container.
+- **Mark:** a sheet outline with one text line and one solid Pine bar. It shows the product idea: a document with a solid redaction.
+- **Navigation:** text links; the current page gets Hover Slate and medium weight.
+- **Model indicator:** always visible on the right and read on the server. A dot, the locality ("Local model", "LAN model", "Remote model"), the host when not local, and the model name in mono. Remote gets the Ochre wash. It links to Settings.
+
+### Package workspace
+- **Header:** breadcrumb, package name (Display), Mode and Locality badges, one meta line (recipient, profile, file count, status), and line tabs (Scan, Review, Preview, Export). The active tab has a 2px Pine underline on the header Rule. Review shows its open count in a neutral chip.
+- **Review and Preview** fill the viewport height: Panel file column (16rem), Sheet document column, Panel findings column (24rem). Each column scrolls by itself. Below `lg` they stack.
+- **Scan and Export** are left-aligned content up to 56rem wide, under the header.
+
+### File row
+Icon (Brick for failed, Ochre for not supported), mono file name, size and state in muted text, and a reason line in Brick or Ochre when needed. Open count is a neutral chip on the right. A processed file with no open findings shows a muted check. Excluded files are struck through at 60% opacity. The selected row uses Pine Selection.
+
+### Decision mark
+A 14px glyph that shows the decision in every list: an Ochre ring for open, a solid Redaction block for redact, a muted check for keep, a muted dash for not an issue.
+
+### Finding row
+Collapsed: decision mark, title, category on the right, then the quote in mono and the location in one muted line. Selected: Pine Selection background, the reason, the exact quote on Highlighter inside a Sheet block, a small definition list (where, detected by, profile suggestion), a 2×2 grid of decision buttons (the current decision is Primary with a check; Redact and Keep show their keys), and ghost row actions (Reopen, Find related, Exclude file). The selected row scrolls into view.
+
+### Evidence viewers
+- **Text:** mono, 24px line height, a muted line-number gutter. Open spans use Highlighter at 55%. The selected span is full Highlighter with a 2px Pine underline and scrolls into view. Redacted spans are solid Redaction. Kept spans lose the fill and get a dotted underline.
+- **Image:** fit to the column width with a 1px Rule. Boxes: Ochre outline for open, solid Redaction for redact, dashed muted outline for keep, Pine outline and ring for selected. A sticky toolbar holds Draw box and Delete box.
+
+### Segmented filter
+A `ToggleGroup` on a Muted track. The pressed item is Sheet-colored with a light shadow and carries a count. Used for the decision filter and the recipient source.
+
+### Form section
+`components/form-section.tsx`: title and description in a 15rem left column, controls on the right, sections separated by a 1px Rule. Used by New package and Settings.
+
+### Badges
+3.6px corners, 20px high, 12px medium text. Outline for facts (Mode), the locality colors for Locality, Secondary for neutral counts. Never pill-shaped.
 
 ### Buttons
 Quiet and exact: small, flat, and clear about what they do.

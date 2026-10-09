@@ -1,34 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { FormSection } from "@/components/form-section";
 import { LocalityBadge } from "@/components/locality-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import {
-  getSettings,
-  saveSettings,
-  testSettings,
-} from "@/lib/client/client";
-import type {
-  ConnectionTestResult,
-  SettingsResponse,
-} from "@/lib/contract/schemas";
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { getSettings, saveSettings, testSettings } from "@/lib/client/client";
+import type { ConnectionTestResult, SettingsResponse } from "@/lib/contract/schemas";
 import { hostnameOf, modeLabel } from "@/lib/utils";
+import { CircleCheck, CircleX } from "lucide-react";
 import { toast } from "sonner";
 
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[8rem_minmax(0,1fr)] gap-4 px-4 py-2.5 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0">{children}</dd>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
+  const router = useRouter();
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
   const [textModel, setTextModel] = useState("");
@@ -69,6 +74,13 @@ export default function SettingsPage() {
     };
   }, []);
 
+  const dirty =
+    settings !== null &&
+    (baseUrl.trim() !== settings.baseUrl ||
+      textModel.trim() !== (settings.textModel ?? "") ||
+      visionModel.trim() !== (settings.visionModel ?? "") ||
+      timeoutMs.trim() !== String(settings.timeoutMs));
+
   async function onSave() {
     setSaving(true);
     setError(null);
@@ -84,11 +96,12 @@ export default function SettingsPage() {
       });
 
       setSettings(next);
+      setTimeoutMs(String(next.timeoutMs));
+      setTest(null);
+      router.refresh();
       toast.success("Settings saved.");
     } catch (saveError) {
-      setError(
-        saveError instanceof Error ? saveError.message : "Could not save.",
-      );
+      setError(saveError instanceof Error ? saveError.message : "Could not save.");
     } finally {
       setSaving(false);
     }
@@ -101,34 +114,38 @@ export default function SettingsPage() {
     try {
       setTest(await testSettings());
     } catch (testError) {
-      setError(
-        testError instanceof Error ? testError.message : "Test failed.",
-      );
+      setError(testError instanceof Error ? testError.message : "Test failed.");
     } finally {
       setTesting(false);
     }
   }
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+    return (
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-6 py-8">
+        <Skeleton className="h-7 w-40" />
+        <Skeleton className="h-4 w-96" />
+      </div>
+    );
   }
 
   if (error && settings === null) {
     return (
-      <Alert variant="destructive">
-        <AlertTitle>Could not load settings</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
+      <div className="mx-auto w-full max-w-5xl px-6 py-8">
+        <Alert variant="destructive">
+          <AlertTitle>Could not load settings</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
     );
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
-      <div>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8">
+      <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Where the model runs. The API key is set from the environment only
-          and never shown here.
+        <p className="text-sm text-muted-foreground">
+          Where the model runs. Files go only to the model server you set here.
         </p>
       </div>
 
@@ -139,16 +156,13 @@ export default function SettingsPage() {
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Model server</CardTitle>
-          <CardDescription>
-            Any OpenAI-compatible server on this machine or the local network.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="base-url">Base URL</Label>
+      <div className="flex flex-col">
+        <FormSection
+          title="Model server"
+          description="Any OpenAI-compatible server on this machine or the local network, for example Ollama or LM Studio."
+        >
+          <Field>
+            <FieldLabel htmlFor="base-url">Base URL</FieldLabel>
             <Input
               id="base-url"
               value={baseUrl}
@@ -156,11 +170,22 @@ export default function SettingsPage() {
               placeholder="http://127.0.0.1:11434/v1"
               autoComplete="off"
               spellCheck={false}
+              className="font-mono text-[0.8125rem]"
             />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="text-model">Text model</Label>
+            <FieldDescription>
+              A server that is not on this machine or the local network counts as remote. Each
+              package then asks for your confirmation before it sends files.
+            </FieldDescription>
+          </Field>
+        </FormSection>
+
+        <FormSection
+          title="Models"
+          description="The model names as the server lists them. Test the connection to see the list."
+        >
+          <FieldGroup className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="text-model">Text model</FieldLabel>
               <Input
                 id="text-model"
                 value={textModel}
@@ -168,10 +193,11 @@ export default function SettingsPage() {
                 placeholder="gemma4:e4b"
                 autoComplete="off"
                 spellCheck={false}
+                className="font-mono text-[0.8125rem]"
               />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="vision-model">Vision model</Label>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="vision-model">Vision model</FieldLabel>
               <Input
                 id="vision-model"
                 value={visionModel}
@@ -179,104 +205,112 @@ export default function SettingsPage() {
                 placeholder="gemma4:e4b"
                 autoComplete="off"
                 spellCheck={false}
+                className="font-mono text-[0.8125rem]"
               />
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="timeout">Request timeout (ms)</Label>
-            <Input
-              id="timeout"
-              value={timeoutMs}
-              onChange={(event) => setTimeoutMs(event.target.value)}
-              inputMode="numeric"
-              autoComplete="off"
-            />
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">API key:</span>
-            {settings?.apiKeySet ? (
-              <Badge variant="secondary">Set in environment</Badge>
-            ) : (
-              <Badge variant="outline">Not set</Badge>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={onSave} disabled={saving}>
-              {saving ? "Saving…" : "Save settings"}
-            </Button>
-            <Button variant="outline" onClick={onTest} disabled={testing}>
-              {testing ? "Testing…" : "Test connection"}
-            </Button>
-            {test && (
-              <LocalityBadge
-                locality={test.locality}
-                host={hostnameOf(baseUrl)}
+            </Field>
+          </FieldGroup>
+        </FormSection>
+
+        <FormSection
+          title="Requests"
+          description="How long SentinelDesk waits for one answer from the model server."
+        >
+          <Field className="max-w-60">
+            <FieldLabel htmlFor="timeout">Request timeout</FieldLabel>
+            <InputGroup>
+              <InputGroupInput
+                id="timeout"
+                value={timeoutMs}
+                onChange={(event) => setTimeoutMs(event.target.value)}
+                inputMode="numeric"
+                autoComplete="off"
+                className="tabular-nums"
               />
-            )}
+              <InputGroupAddon align="inline-end">
+                <InputGroupText>ms</InputGroupText>
+              </InputGroupAddon>
+            </InputGroup>
+          </Field>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">API key</p>
+            <p className="text-sm text-muted-foreground">
+              {settings?.apiKeySet
+                ? "Set in the environment (LLM_API_KEY). It is never shown here."
+                : "Not set. Local servers usually do not need one. Set LLM_API_KEY in the environment if yours does."}
+            </p>
           </div>
-        </CardContent>
-      </Card>
+        </FormSection>
+
+        <div className="flex flex-wrap items-center gap-2 border-t pt-6 md:pl-[calc(15rem+2.5rem)]">
+          <Button onClick={onSave} disabled={saving || !dirty}>
+            {saving && <Spinner data-icon="inline-start" />}
+            Save settings
+          </Button>
+          <Button variant="outline" onClick={onTest} disabled={testing || dirty}>
+            {testing && <Spinner data-icon="inline-start" />}
+            {testing ? "Testing…" : "Test connection"}
+          </Button>
+          {dirty && (
+            <span className="text-xs text-muted-foreground">Save to test the new settings.</span>
+          )}
+        </div>
+      </div>
 
       {test && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Connection test</CardTitle>
-            <CardDescription>
+        <section
+          aria-labelledby="test-title"
+          className="flex flex-col gap-3 md:pl-[calc(15rem+2.5rem)]"
+        >
+          <div className="flex items-center gap-2">
+            {test.ok ? (
+              <CircleCheck className="size-4 text-primary" />
+            ) : (
+              <CircleX className="size-4 text-destructive" />
+            )}
+            <h2 id="test-title" className="text-sm font-medium">
               {test.ok ? "The server answered." : "The server did not answer."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3 text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-muted-foreground">Mode:</span>
-              <Badge variant="secondary">{modeLabel(test.mode)}</Badge>
-              <span className="text-muted-foreground">Latency:</span>
+            </h2>
+          </div>
+          <dl className="divide-y overflow-hidden rounded-lg border bg-card">
+            <Row label="Location">
+              <LocalityBadge locality={test.locality} host={hostnameOf(baseUrl)} />
+            </Row>
+            <Row label="Scan mode">{modeLabel(test.mode)}</Row>
+            <Row label="Latency">
               <span className="font-mono tabular-nums">
-                {test.latencyMs === null ? "—" : `${test.latencyMs} ms`}
+                {test.latencyMs === null ? "—" : `${Math.round(test.latencyMs)} ms`}
               </span>
-            </div>
-            <Separator />
-            <div>
-              <p className="mb-1 text-xs font-medium text-muted-foreground">
-                Models ({test.models.length})
-              </p>
-              {test.models.length === 0 ? (
-                <p className="text-muted-foreground">No models listed.</p>
+            </Row>
+            <Row label="JSON test">
+              {test.jsonTest.ok ? (
+                "Valid JSON"
               ) : (
-                <ul className="flex flex-col gap-1">
+                <span className="text-destructive">Invalid JSON</span>
+              )}
+              {test.jsonTest.error && (
+                <span className="mt-0.5 block text-muted-foreground">{test.jsonTest.error}</span>
+              )}
+            </Row>
+            <Row label={`Models (${test.models.length})`}>
+              {test.models.length === 0 ? (
+                <span className="text-muted-foreground">No models listed.</span>
+              ) : (
+                <ul className="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
                   {test.models.map((model) => (
-                    <li key={model} className="font-mono text-[0.8125rem]">
+                    <li key={model} className="truncate font-mono text-[0.8125rem]">
                       {model}
                     </li>
                   ))}
                 </ul>
               )}
-            </div>
-            <Separator />
-            <div>
-              <p className="mb-1 text-xs font-medium text-muted-foreground">
-                JSON test
-              </p>
-              <p>
-                {test.jsonTest.ok ? (
-                  <Badge variant="secondary">Valid JSON</Badge>
-                ) : (
-                  <Badge variant="destructive">Invalid JSON</Badge>
-                )}
-              </p>
-              {test.jsonTest.error && (
-                <p className="mt-1 text-muted-foreground">
-                  {test.jsonTest.error}
-                </p>
-              )}
-            </div>
+            </Row>
             {test.error && (
-              <>
-                <Separator />
-                <p className="text-destructive">{test.error}</p>
-              </>
+              <Row label="Error">
+                <span className="text-destructive">{test.error}</span>
+              </Row>
             )}
-          </CardContent>
-        </Card>
+          </dl>
+        </section>
       )}
     </div>
   );

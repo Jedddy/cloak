@@ -4,15 +4,27 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Table,
   TableBody,
@@ -28,13 +40,9 @@ import {
   listProfiles,
   listRecipients,
 } from "@/lib/client/client";
-import type {
-  Package,
-  Recipient,
-  RecipientProfile,
-} from "@/lib/contract/schemas";
-import { formatDateTime } from "@/lib/utils";
-import { Trash2 } from "lucide-react";
+import type { Package, Recipient } from "@/lib/contract/schemas";
+import { cn, formatDateTime, openFindingsOf, plural, sentenceCase } from "@/lib/utils";
+import { FolderOpen, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Row = {
@@ -47,7 +55,8 @@ type Row = {
 export default function PackagesPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Package | null>(null);
 
   useEffect(() => {
     let stale = false;
@@ -68,17 +77,7 @@ export default function PackagesPage() {
           recipients.map((recipient) => [recipient.id, recipient]),
         );
 
-        const profileNameOf = (profileId: string): string => {
-          const profile: RecipientProfile | undefined = profiles.find(
-            (candidate) => candidate.id === profileId,
-          );
-
-          return profile ? profile.name : "Unknown profile";
-        };
-
-        const details = await Promise.all(
-          packages.map((pkg) => getPackage(pkg.id)),
-        );
+        const details = await Promise.all(packages.map((pkg) => getPackage(pkg.id)));
 
         if (stale) {
           return;
@@ -88,15 +87,13 @@ export default function PackagesPage() {
           details.map((detail) => {
             const recipient = byRecipient.get(detail.package.recipientId);
 
+            const profile = profiles.find((candidate) => candidate.id === recipient?.profileId);
+
             return {
               pkg: detail.package,
               recipientName: recipient ? recipient.name : "Unknown recipient",
-              profileName: recipient
-                ? profileNameOf(recipient.profileId)
-                : "—",
-              openFindings: detail.findings.filter(
-                (finding) => finding.decision === "open",
-              ).length,
+              profileName: profile ? profile.name : "No profile",
+              openFindings: openFindingsOf(detail.findings),
             };
           }),
         );
@@ -105,9 +102,7 @@ export default function PackagesPage() {
           return;
         }
 
-        setError(
-          loadError instanceof Error ? loadError.message : "Could not load.",
-        );
+        setError(loadError instanceof Error ? loadError.message : "Could not load.");
       }
     }
 
@@ -118,38 +113,39 @@ export default function PackagesPage() {
     };
   }, []);
 
-  async function onDelete(id: string, name: string) {
-    if (!window.confirm(`Delete package "${name}" and all its files?`)) {
+  async function onDelete() {
+    if (!pendingDelete) {
       return;
     }
 
-    setDeleting(id);
+    const { id } = pendingDelete;
+
+    setDeleting(true);
 
     try {
       await deletePackage(id);
-      setRows((current) =>
-        current ? current.filter((row) => row.pkg.id !== id) : current,
-      );
+      setRows((current) => (current ? current.filter((row) => row.pkg.id !== id) : current));
       toast.success("Package deleted.");
+      setPendingDelete(null);
     } catch (deleteError) {
-      toast.error(
-        deleteError instanceof Error ? deleteError.message : "Delete failed.",
-      );
+      toast.error(deleteError instanceof Error ? deleteError.message : "Delete failed.");
     } finally {
-      setDeleting(null);
+      setDeleting(false);
     }
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8">
+      <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Packages</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            One package per recipient handoff.
+          <p className="text-sm text-muted-foreground">
+            Each package is the set of files for one recipient. Scan it, decide on each finding,
+            then export reviewed copies.
           </p>
         </div>
         <Link href="/packages/new" className={buttonVariants()}>
+          <Plus data-icon="inline-start" />
           New package
         </Link>
       </div>
@@ -162,80 +158,155 @@ export default function PackagesPage() {
       )}
 
       {rows === null && !error && (
-        <p className="text-sm text-muted-foreground">Loading packages…</p>
+        <div className="flex flex-col gap-px overflow-hidden rounded-lg border">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="flex items-center gap-6 bg-card px-4 py-3.5">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="ml-auto h-4 w-20" />
+            </div>
+          ))}
+        </div>
       )}
 
       {rows !== null && rows.length === 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>No packages yet</CardTitle>
-            <CardDescription>
-              Assemble your first sharing package to see what it reveals.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Empty className="border bg-card py-16">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <FolderOpen />
+            </EmptyMedia>
+            <EmptyTitle>No packages yet</EmptyTitle>
+            <EmptyDescription>
+              Add the files you plan to send and pick who receives them. SentinelDesk shows what the
+              files reveal to that recipient.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
             <Link href="/packages/new" className={buttonVariants()}>
+              <Plus data-icon="inline-start" />
               New package
             </Link>
-          </CardContent>
-        </Card>
+          </EmptyContent>
+        </Empty>
       )}
 
       {rows !== null && rows.length > 0 && (
-        <Card>
+        <div className="overflow-hidden rounded-lg border bg-card">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Recipient</TableHead>
-                <TableHead>Profile</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Open findings</TableHead>
-                <TableHead>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-9 pl-4 text-xs text-muted-foreground">Package</TableHead>
+                <TableHead className="h-9 text-xs text-muted-foreground">Recipient</TableHead>
+                <TableHead className="h-9 text-xs text-muted-foreground">Status</TableHead>
+                <TableHead className="h-9 text-right text-xs text-muted-foreground">
+                  Open findings
+                </TableHead>
+                <TableHead className="hidden h-9 text-right text-xs text-muted-foreground md:table-cell">
+                  Created
+                </TableHead>
+                <TableHead className="h-9 w-12 pr-4">
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.pkg.id}>
-                  <TableCell>
-                    <Link
-                      href={`/packages/${row.pkg.id}`}
-                      className="font-medium underline-offset-4 hover:underline"
-                    >
-                      {row.pkg.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{row.recipientName}</TableCell>
-                  <TableCell>{row.profileName}</TableCell>
-                  <TableCell className="tabular-nums">
-                    {formatDateTime(row.pkg.createdAt)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{row.pkg.status}</Badge>
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {row.openFindings}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Delete package ${row.pkg.name}`}
-                      disabled={deleting === row.pkg.id}
-                      onClick={() => onDelete(row.pkg.id, row.pkg.name)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {rows.map((row) => {
+                const scanned = row.pkg.lastScan !== null;
+
+                const busy = row.pkg.status === "scanning" || row.pkg.status === "exporting";
+
+                return (
+                  <TableRow key={row.pkg.id} className="group relative">
+                    <TableCell className="py-3 pl-4">
+                      <Link
+                        href={`/packages/${row.pkg.id}`}
+                        className="font-medium outline-none after:absolute after:inset-0 focus-visible:underline"
+                      >
+                        {row.pkg.name}
+                      </Link>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {plural(row.pkg.files.length, "file")}
+                      </p>
+                    </TableCell>
+                    <TableCell className="py-3">
+                      <p>{row.recipientName}</p>
+                      <p className="text-xs text-muted-foreground">{row.profileName}</p>
+                    </TableCell>
+                    <TableCell className="py-3">
+                      <span className="inline-flex items-center gap-2">
+                        {busy ? (
+                          <Spinner className="size-3 text-muted-foreground" />
+                        ) : (
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              "size-1.5 rounded-full bg-muted-foreground/50",
+                              scanned && row.openFindings > 0 && "bg-warning",
+                              row.pkg.status === "exported" &&
+                                row.openFindings === 0 &&
+                                "bg-primary",
+                            )}
+                          />
+                        )}
+                        {sentenceCase(row.pkg.status)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-3 text-right tabular-nums">
+                      {!scanned && <span className="text-muted-foreground">Not scanned</span>}
+                      {scanned && row.openFindings === 0 && (
+                        <span className="text-muted-foreground">None</span>
+                      )}
+                      {scanned && row.openFindings > 0 && (
+                        <span className="font-medium">{row.openFindings}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden py-3 text-right text-muted-foreground tabular-nums md:table-cell">
+                      {formatDateTime(row.pkg.createdAt)}
+                    </TableCell>
+                    <TableCell className="py-3 pr-4 text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="relative z-10 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
+                        aria-label={`Delete package ${row.pkg.name}`}
+                        onClick={() => setPendingDelete(row.pkg)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
-        </Card>
+        </div>
       )}
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open: boolean) => {
+          if (!open && !deleting) {
+            setPendingDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{pendingDelete?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes the package, its uploaded originals, its decisions, and any reviewed
+              copies. Files on your disk outside SentinelDesk are not affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={onDelete}>
+              {deleting && <Spinner data-icon="inline-start" />}
+              Delete package
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

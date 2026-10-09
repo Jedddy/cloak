@@ -9,7 +9,7 @@ function badgeClass(locality: Locality): string {
   }
 
   if (locality === "lan") {
-    return "bg-sky-500/10 text-sky-700 dark:text-sky-300";
+    return "bg-muted text-foreground";
   }
 
   return "bg-warning-muted text-warning";

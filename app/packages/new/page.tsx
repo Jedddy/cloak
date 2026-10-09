@@ -3,17 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { FormSection } from "@/components/form-section";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -22,16 +15,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   createPackage,
   listProfiles,
@@ -41,69 +43,35 @@ import {
   uploadFile,
 } from "@/lib/client/client";
 import {
+  CategorySchema,
   UPLOAD_LIMITS,
   type Category,
+  type Recipient,
   type RecipientProfile,
 } from "@/lib/contract/schemas";
-import { formatBytes } from "@/lib/utils";
-import { X } from "lucide-react";
+import { categoryLabel, cn, formatBytes, plural } from "@/lib/utils";
+import { FileText, Image as ImageIcon, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
-const allCategories: Category[] = [
-  "secret",
-  "personal-contact",
-  "personal-id",
-  "other-client",
-  "protected-term",
-  "internal-pricing",
-  "internal-infra",
-  "unreleased-work",
-  "metadata",
-  "hidden-data",
-  "prompt-injection",
-  "other",
+type Bucket = "allowed" | "needsDecision" | "remove";
+
+const buckets: { value: Bucket; label: string }[] = [
+  { value: "allowed", label: "Allowed" },
+  { value: "needsDecision", label: "Needs decision" },
+  { value: "remove", label: "Remove" },
 ];
 
-function CategoryList({
-  title,
-  items,
-}: {
-  title: string;
-  items: Category[];
-}) {
-  return (
-    <div>
-      <p className="mb-1 text-xs font-medium text-muted-foreground">{title}</p>
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">None</p>
-      ) : (
-        <ul className="flex flex-wrap gap-1">
-          {items.map((category) => (
-            <li key={category}>
-              <Badge variant="outline">{category}</Badge>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
+const segmentItemClass =
+  "flex-1 rounded-[5px]! text-muted-foreground hover:bg-background/60 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs";
 
 export default function NewPackagePage() {
   const router = useRouter();
   const [profiles, setProfiles] = useState<RecipientProfile[] | null>(null);
-
-  const [recipients, setRecipients] = useState<
-    { id: string; name: string; profileId: string }[] | null
-  >(null);
-
+  const [recipients, setRecipients] = useState<Recipient[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   const [name, setName] = useState("");
 
-  const [recipientMode, setRecipientMode] = useState<"select" | "create">(
-    "select",
-  );
+  const [recipientMode, setRecipientMode] = useState<"select" | "create">("select");
 
   const [recipientId, setRecipientId] = useState<string | null>(null);
   const [newRecipientName, setNewRecipientName] = useState("");
@@ -111,15 +79,13 @@ export default function NewPackagePage() {
   const [termInput, setTermInput] = useState("");
   const [terms, setTerms] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [creating, setCreating] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
 
-  const [editingProfile, setEditingProfile] =
-    useState<RecipientProfile | null>(null);
+  const [editingProfile, setEditingProfile] = useState<RecipientProfile | null>(null);
 
-  const [editAllowed, setEditAllowed] = useState<Category[]>([]);
-  const [editNeedsDecision, setEditNeedsDecision] = useState<Category[]>([]);
-  const [editRemove, setEditRemove] = useState<Category[]>([]);
+  const [editBuckets, setEditBuckets] = useState<Partial<Record<Category, Bucket>>>({});
   const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
@@ -156,19 +122,22 @@ export default function NewPackagePage() {
     };
   }, []);
 
+  const selectedRecipient = recipients?.find((recipient) => recipient.id === recipientId) ?? null;
+
+  const activeProfileId = recipientMode === "select" ? selectedRecipient?.profileId : profileId;
+
   const activeProfile: RecipientProfile | null =
-    profiles?.find((profile) => profile.id === profileId) ?? null;
+    profiles?.find((profile) => profile.id === activeProfileId) ?? null;
+
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
 
   function addTerm() {
     const term = termInput.trim();
 
-    if (term === "" || terms.includes(term)) {
-      setTermInput("");
-
-      return;
+    if (term !== "" && !terms.includes(term)) {
+      setTerms((current) => [...current, term]);
     }
 
-    setTerms((current) => [...current, term]);
     setTermInput("");
   }
 
@@ -188,28 +157,26 @@ export default function NewPackagePage() {
       accepted.push(file);
     }
 
-    setFiles((current) =>
-      [...current, ...accepted].slice(0, UPLOAD_LIMITS.maxFilesPerPackage),
-    );
+    if (files.length + accepted.length > UPLOAD_LIMITS.maxFilesPerPackage) {
+      toast.error(
+        `A package holds up to ${UPLOAD_LIMITS.maxFilesPerPackage} files. The rest were skipped.`,
+      );
+    }
+
+    setFiles((current) => [...current, ...accepted].slice(0, UPLOAD_LIMITS.maxFilesPerPackage));
   }
 
   function openProfileEditor(profile: RecipientProfile) {
-    setEditingProfile(profile);
-    setEditAllowed([...profile.allowed]);
-    setEditNeedsDecision([...profile.needsDecision]);
-    setEditRemove([...profile.remove]);
-  }
+    const next: Partial<Record<Category, Bucket>> = {};
 
-  function toggleBucket(
-    list: Category[],
-    setList: (next: Category[]) => void,
-    category: Category,
-  ) {
-    setList(
-      list.includes(category)
-        ? list.filter((item) => item !== category)
-        : [...list, category],
-    );
+    for (const bucket of buckets) {
+      for (const category of profile[bucket.value]) {
+        next[category] = bucket.value;
+      }
+    }
+
+    setEditBuckets(next);
+    setEditingProfile(profile);
   }
 
   async function onSaveProfile() {
@@ -219,29 +186,26 @@ export default function NewPackagePage() {
 
     setSavingProfile(true);
 
+    const inBucket = (bucket: Bucket) =>
+      CategorySchema.options.filter((category) => editBuckets[category] === bucket);
+
     try {
       const next = await saveProfile({
         id: editingProfile.id,
         name: editingProfile.name,
         description: editingProfile.description,
-        allowed: editAllowed,
-        needsDecision: editNeedsDecision,
-        remove: editRemove,
+        allowed: inBucket("allowed"),
+        needsDecision: inBucket("needsDecision"),
+        remove: inBucket("remove"),
       });
 
       setProfiles((current) =>
-        current
-          ? current.map((profile) =>
-              profile.id === next.id ? next : profile,
-            )
-          : current,
+        current ? current.map((profile) => (profile.id === next.id ? next : profile)) : current,
       );
       setEditingProfile(null);
       toast.success("Profile updated.");
     } catch (saveError) {
-      toast.error(
-        saveError instanceof Error ? saveError.message : "Could not save.",
-      );
+      toast.error(saveError instanceof Error ? saveError.message : "Could not save.");
     } finally {
       setSavingProfile(false);
     }
@@ -290,7 +254,7 @@ export default function NewPackagePage() {
       });
 
       for (const [index, file] of files.entries()) {
-        setProgress(`Uploading ${index + 1} of ${files.length}: ${file.name}`);
+        setProgress(`Uploading ${index + 1} of ${files.length}`);
         await uploadFile(pkg.id, file);
       }
 
@@ -298,9 +262,7 @@ export default function NewPackagePage() {
       toast.success("Package created.");
       router.push(`/packages/${pkg.id}`);
     } catch (createError) {
-      setError(
-        createError instanceof Error ? createError.message : "Create failed.",
-      );
+      setError(createError instanceof Error ? createError.message : "Create failed.");
       setProgress(null);
       setCreating(false);
     }
@@ -308,127 +270,157 @@ export default function NewPackagePage() {
 
   if (profiles === null || recipients === null) {
     return (
-      <p className="text-sm text-muted-foreground">
-        {error ?? "Loading…"}
-      </p>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-6 py-8">
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>Could not load recipients</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <Skeleton className="h-7 w-48" />
+            <Skeleton className="h-4 w-80" />
+          </>
+        )}
+      </div>
     );
   }
 
+  const recipientLabel =
+    recipientMode === "select" ? selectedRecipient?.name : newRecipientName.trim();
+
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">New package</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Name it, pick who receives it, and drop the files.
-        </p>
-      </div>
+    <div className="flex min-h-full flex-col">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-6 py-8">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">New package</h1>
+          <p className="text-sm text-muted-foreground">
+            Name it, pick who receives it, and add the files you plan to send.
+          </p>
+        </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertTitle>Could not create the package</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+        {error && (
+          <Alert variant="destructive">
+            <AlertTitle>Could not create the package</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Package</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="package-name">Name</Label>
-            <Input
-              id="package-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Contractor handoff"
-              autoComplete="off"
-            />
-          </div>
+        <div className="flex flex-col">
+          <FormSection
+            title="Package"
+            description="Name it after the handoff, so that you can find it later."
+          >
+            <Field>
+              <FieldLabel htmlFor="package-name">Name</FieldLabel>
+              <Input
+                id="package-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Contractor handoff"
+                autoComplete="off"
+              />
+            </Field>
+          </FormSection>
 
-          <Separator />
-
-          <div className="flex flex-col gap-3">
-            <Label>Recipient</Label>
+          <FormSection
+            title="Recipient"
+            description="The recipient's profile sets the suggested action for each category of finding."
+          >
             {recipients.length > 0 && (
-              <div className="flex gap-2">
-                <Button
-                  variant={recipientMode === "select" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setRecipientMode("select")}
-                >
-                  Saved recipient
-                </Button>
-                <Button
-                  variant={recipientMode === "create" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setRecipientMode("create")}
-                >
-                  New recipient
-                </Button>
-              </div>
-            )}
-            {recipientMode === "select" && recipients.length > 0 ? (
-              <Select
-                value={recipientId ?? ""}
-                onValueChange={(value: string | null) => setRecipientId(value)}
+              <ToggleGroup
+                value={[recipientMode]}
+                onValueChange={(value: string[]) => {
+                  if (value[0] === "select" || value[0] === "create") {
+                    setRecipientMode(value[0]);
+                  }
+                }}
+                spacing={0}
+                size="sm"
+                aria-label="Recipient source"
+                className="w-full max-w-xs rounded-md bg-muted p-0.5"
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pick a recipient" />
-                </SelectTrigger>
-                <SelectContent>
-                  {recipients.map((recipient) => (
-                    <SelectItem key={recipient.id} value={recipient.id}>
-                      {recipient.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <ToggleGroupItem value="select" className={segmentItemClass}>
+                  Saved recipient
+                </ToggleGroupItem>
+                <ToggleGroupItem value="create" className={segmentItemClass}>
+                  New recipient
+                </ToggleGroupItem>
+              </ToggleGroup>
+            )}
+
+            {recipientMode === "select" && recipients.length > 0 ? (
+              <Field>
+                <FieldLabel>Recipient</FieldLabel>
+                <Select
+                  items={recipients.map((recipient) => ({
+                    value: recipient.id,
+                    label: recipient.name,
+                  }))}
+                  value={recipientId ?? ""}
+                  onValueChange={(value: string | null) => setRecipientId(value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pick a recipient" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {recipients.map((recipient) => (
+                        <SelectItem key={recipient.id} value={recipient.id}>
+                          {recipient.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
             ) : (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="recipient-name">Recipient name</Label>
+              <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="recipient-name">Recipient name</FieldLabel>
                   <Input
                     id="recipient-name"
                     value={newRecipientName}
-                    onChange={(event) =>
-                      setNewRecipientName(event.target.value)
-                    }
+                    onChange={(event) => setNewRecipientName(event.target.value)}
                     placeholder="Northwind Studio"
                     autoComplete="off"
                   />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>Profile</Label>
+                </Field>
+                <Field>
+                  <FieldLabel>Profile</FieldLabel>
                   <Select
+                    items={profiles.map((profile) => ({
+                      value: profile.id,
+                      label: profile.name,
+                    }))}
                     value={profileId ?? ""}
                     onValueChange={(value: string | null) => setProfileId(value)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pick a profile" />
                     </SelectTrigger>
                     <SelectContent>
-                      {profiles.map((profile) => (
-                        <SelectItem key={profile.id} value={profile.id}>
-                          {profile.name}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        {profiles.map((profile) => (
+                          <SelectItem key={profile.id} value={profile.id}>
+                            {profile.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
+                </Field>
+              </FieldGroup>
             )}
-          </div>
 
-          {activeProfile && recipientMode === "create" && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <CardTitle>{activeProfile.name}</CardTitle>
-                    <CardDescription>
-                      {activeProfile.description}
-                    </CardDescription>
+            {activeProfile && (
+              <div className="rounded-lg border bg-card">
+                <div className="flex items-start justify-between gap-4 border-b px-4 py-3">
+                  <div className="flex flex-col gap-0.5">
+                    <p className="text-sm font-medium">{activeProfile.name}</p>
+                    {activeProfile.description && (
+                      <p className="text-sm text-muted-foreground">{activeProfile.description}</p>
+                    )}
                   </div>
                   <Button
                     variant="outline"
@@ -438,54 +430,67 @@ export default function NewPackagePage() {
                     Edit profile
                   </Button>
                 </div>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <CategoryList title="Allowed" items={activeProfile.allowed} />
-                <CategoryList
-                  title="Needs decision"
-                  items={activeProfile.needsDecision}
+                <dl className="grid grid-cols-1 divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                  {buckets.map((bucket) => (
+                    <div key={bucket.value} className="flex flex-col gap-1.5 px-4 py-3">
+                      <dt className="text-xs text-muted-foreground">{bucket.label}</dt>
+                      <dd className="text-sm">
+                        {activeProfile[bucket.value].length === 0 ? (
+                          <span className="text-muted-foreground">None</span>
+                        ) : (
+                          <ul className="flex flex-col gap-0.5">
+                            {activeProfile[bucket.value].map((category) => (
+                              <li key={category}>{categoryLabel(category)}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+          </FormSection>
+
+          <FormSection
+            title="Protected terms"
+            description="Words that are sensitive in this package only, such as a project codename. Every occurrence becomes a finding."
+          >
+            <Field>
+              <FieldLabel htmlFor="protected-term">Term</FieldLabel>
+              <InputGroup>
+                <InputGroupInput
+                  id="protected-term"
+                  value={termInput}
+                  onChange={(event) => setTermInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addTerm();
+                    }
+                  }}
+                  placeholder="Project Juniper"
+                  autoComplete="off"
                 />
-                <CategoryList title="Remove" items={activeProfile.remove} />
-              </CardContent>
-            </Card>
-          )}
-
-          <Separator />
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="protected-term">Protected terms</Label>
-            <div className="flex gap-2">
-              <Input
-                id="protected-term"
-                value={termInput}
-                onChange={(event) => setTermInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addTerm();
-                  }
-                }}
-                placeholder="Project Juniper"
-                autoComplete="off"
-              />
-              <Button variant="outline" onClick={addTerm}>
-                Add
-              </Button>
-            </div>
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton variant="secondary" size="xs" onClick={addTerm}>
+                    Add
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+            </Field>
             {terms.length > 0 && (
-              <ul className="flex flex-wrap gap-1">
+              <ul className="flex flex-wrap gap-1.5" aria-label="Protected terms">
                 {terms.map((term) => (
                   <li key={term}>
-                    <Badge variant="secondary">
+                    <Badge variant="secondary" className="h-6 gap-1 pr-1 font-mono">
                       {term}
                       <button
                         type="button"
                         aria-label={`Remove term ${term}`}
-                        className="ml-1 rounded-sm hover:text-foreground"
+                        className="rounded-sm p-0.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
                         onClick={() =>
-                          setTerms((current) =>
-                            current.filter((item) => item !== term),
-                          )
+                          setTerms((current) => current.filter((item) => item !== term))
                         }
                       >
                         <X className="size-3" />
@@ -495,76 +500,104 @@ export default function NewPackagePage() {
                 ))}
               </ul>
             )}
-          </div>
+          </FormSection>
 
-          <Separator />
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="file-drop">Files</Label>
+          <FormSection
+            title="Files"
+            description="PNG, JPEG, and text files such as .txt, .md, .json, .csv, .env, .log, and .yaml. Other types are listed as not supported."
+          >
             <label
               htmlFor="file-drop"
-              className="flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed border-input px-4 py-8 text-center transition-colors hover:bg-muted"
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDragging(false);
+                addFiles(event.dataTransfer.files);
+              }}
+              className={cn(
+                "flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-input bg-card px-4 py-10 text-center transition-colors duration-150 hover:bg-accent/50 has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50",
+                dragging && "border-primary bg-selection hover:bg-selection",
+              )}
             >
+              <Upload className="size-5 text-muted-foreground" aria-hidden="true" />
               <span className="text-sm font-medium">
-                Drop files here or click to browse
+                {dragging ? "Drop to add the files" : "Drop files here or click to browse"}
               </span>
               <span className="text-xs text-muted-foreground">
-                PNG, JPEG, and text files · up to 25 MB each · up to 50 files
+                Up to 25 MB each, up to {UPLOAD_LIMITS.maxFilesPerPackage} files.
               </span>
+              <input
+                id="file-drop"
+                type="file"
+                multiple
+                className="sr-only"
+                onChange={(event) => {
+                  addFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
             </label>
-            <Input
-              id="file-drop"
-              type="file"
-              multiple
-              className="sr-only"
-              onChange={(event) => {
-                addFiles(event.target.files);
-                event.target.value = "";
-              }}
-            />
             {files.length > 0 && (
-              <ul className="flex flex-col gap-1">
-                {files.map((file, index) => (
-                  <li
-                    key={`${file.name}-${file.size}-${index}`}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-mono text-[0.8125rem]">
-                        {file.name}
-                      </span>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {file.type === "" ? "unknown type" : file.type} ·{" "}
-                        {formatBytes(file.size)}
-                      </span>
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Remove ${file.name}`}
-                      onClick={() =>
-                        setFiles((current) =>
-                          current.filter((_, other) => other !== index),
-                        )
-                      }
-                    >
-                      <X />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-baseline justify-between text-xs text-muted-foreground tabular-nums">
+                  <span>{plural(files.length, "file")}</span>
+                  <span>{formatBytes(totalBytes)}</span>
+                </div>
+                <ul className="overflow-hidden rounded-lg border bg-card">
+                  {files.map((file, index) => {
+                    const Icon = file.type.startsWith("image/") ? ImageIcon : FileText;
 
-          <div className="flex items-center gap-2">
-            <Button onClick={onCreate} disabled={creating}>
-              {creating
-                ? (progress ?? "Creating…")
-                : "Create package and upload"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                    return (
+                      <li
+                        key={`${file.name}-${file.size}-${index}`}
+                        className="flex items-center gap-3 border-b py-1.5 pr-1.5 pl-3 text-sm last:border-b-0"
+                      >
+                        <Icon className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]">
+                          {file.name}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                          {formatBytes(file.size)}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Remove ${file.name}`}
+                          onClick={() =>
+                            setFiles((current) => current.filter((_, other) => other !== index))
+                          }
+                        >
+                          <X />
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </FormSection>
+        </div>
+      </div>
+
+      <div className="sticky bottom-0 border-t bg-background">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
+          <p className="truncate text-sm text-muted-foreground">
+            {name.trim() === "" ? "Untitled package" : name.trim()}
+            {recipientLabel ? ` · for ${recipientLabel}` : ""}
+            {" · "}
+            {plural(files.length, "file")}
+            {terms.length > 0 && ` · ${plural(terms.length, "protected term")}`}
+          </p>
+          <Button onClick={onCreate} disabled={creating}>
+            {creating && <Spinner data-icon="inline-start" />}
+            {creating ? (progress ?? "Creating…") : "Create package"}
+          </Button>
+        </div>
+      </div>
 
       <Dialog
         open={editingProfile !== null}
@@ -574,45 +607,49 @@ export default function NewPackagePage() {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>
               {editingProfile ? `Edit ${editingProfile.name}` : "Edit profile"}
             </DialogTitle>
             <DialogDescription>
-              Buckets set the suggested action for each finding category.
+              Put each category in one bucket. The bucket sets the suggested action for findings of
+              that category. This changes the profile for every recipient that uses it.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex max-h-80 flex-col gap-4 overflow-y-auto">
-            {(
-              [
-                ["Allowed", editAllowed, setEditAllowed],
-                ["Needs decision", editNeedsDecision, setEditNeedsDecision],
-                ["Remove", editRemove, setEditRemove],
-              ] as const
-            ).map(([title, list, setList]) => (
-              <div key={title}>
-                <p className="mb-2 text-xs font-medium text-muted-foreground">
-                  {title}
-                </p>
-                <ul className="grid grid-cols-2 gap-1.5">
-                  {allCategories.map((category) => (
-                    <li key={category}>
-                      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-2 py-1.5 text-sm">
-                        <Checkbox
-                          checked={list.includes(category)}
-                          onCheckedChange={() =>
-                            toggleBucket(list, setList, category)
-                          }
-                        />
-                        <span className="font-mono text-xs">{category}</span>
-                      </label>
-                    </li>
+          <ul className="-mx-1 flex max-h-96 flex-col overflow-y-auto px-1">
+            {CategorySchema.options.map((category) => (
+              <li
+                key={category}
+                className="flex items-center justify-between gap-4 border-b py-2 last:border-b-0"
+              >
+                <span className="text-sm">{categoryLabel(category)}</span>
+                <ToggleGroup
+                  value={editBuckets[category] ? [editBuckets[category]] : []}
+                  onValueChange={(value: string[]) =>
+                    setEditBuckets((current) => ({
+                      ...current,
+                      [category]: buckets.find((bucket) => bucket.value === value[0])?.value,
+                    }))
+                  }
+                  spacing={0}
+                  size="sm"
+                  aria-label={`Bucket for ${categoryLabel(category)}`}
+                  className="w-72 shrink-0 rounded-md bg-muted p-0.5"
+                >
+                  {buckets.map((bucket) => (
+                    <ToggleGroupItem
+                      key={bucket.value}
+                      value={bucket.value}
+                      className={segmentItemClass}
+                    >
+                      {bucket.label}
+                    </ToggleGroupItem>
                   ))}
-                </ul>
-              </div>
+                </ToggleGroup>
+              </li>
             ))}
-          </div>
+          </ul>
           <DialogFooter>
             <Button
               variant="outline"
@@ -622,7 +659,8 @@ export default function NewPackagePage() {
               Cancel
             </Button>
             <Button onClick={onSaveProfile} disabled={savingProfile}>
-              {savingProfile ? "Saving…" : "Save profile"}
+              {savingProfile && <Spinner data-icon="inline-start" />}
+              Save profile
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import type { Finding } from "@/lib/contract/schemas";
+import type { Decision, Finding } from "@/lib/contract/schemas";
 
-type Span = { start: number; end: number; findingId: string };
+type Span = { start: number; end: number; findingId: string; decision: Decision };
 
-type Segment = { text: string; findingIds: string[] };
+type Segment = { text: string; spans: Span[] };
 
 function segmentsOf(text: string, spans: Span[]): Segment[] {
   const points = new Set<number>([0, text.length]);
@@ -34,13 +35,32 @@ function segmentsOf(text: string, spans: Span[]): Segment[] {
 
     segments.push({
       text: text.slice(point, next),
-      findingIds: spans.flatMap((span) =>
-        span.start <= point && span.end >= next ? [span.findingId] : [],
-      ),
+      spans: spans.filter((span) => span.start <= point && span.end >= next),
     });
   }
 
   return segments;
+}
+
+/** Splits segments at line breaks so that each line gets its own gutter number. */
+function linesOf(segments: Segment[]): Segment[][] {
+  const lines: Segment[][] = [[]];
+
+  for (const segment of segments) {
+    const parts = segment.text.split("\n");
+
+    for (const [index, part] of parts.entries()) {
+      if (index > 0) {
+        lines.push([]);
+      }
+
+      if (part !== "") {
+        lines[lines.length - 1].push({ text: part, spans: segment.spans });
+      }
+    }
+  }
+
+  return lines;
 }
 
 export function TextViewer({
@@ -58,6 +78,7 @@ export function TextViewer({
 }) {
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const selectedRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let stale = false;
@@ -86,48 +107,110 @@ export function TextViewer({
     };
   }, [fileUrl, fileName]);
 
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selectedFindingId, text]);
+
   if (error) {
-    return <p className="text-sm text-destructive">{error}</p>;
+    return <p className="p-4 text-sm text-destructive">{error}</p>;
   }
 
   if (text === null) {
-    return <p className="text-sm text-muted-foreground">Loading file…</p>;
+    return (
+      <div className="flex flex-col gap-2 p-4">
+        <Skeleton className="h-3.5 w-3/4" />
+        <Skeleton className="h-3.5 w-1/2" />
+        <Skeleton className="h-3.5 w-2/3" />
+      </div>
+    );
   }
 
   const spans: Span[] = findings.flatMap((finding) =>
     finding.detections.flatMap((detection) =>
       detection.evidence.flatMap((evidence) =>
         evidence.type === "text-span"
-          ? [{ start: evidence.start, end: evidence.end, findingId: finding.id }]
+          ? [
+              {
+                start: evidence.start,
+                end: evidence.end,
+                findingId: finding.id,
+                decision: finding.decision,
+              },
+            ]
           : [],
       ),
     ),
   );
 
+  const lines = linesOf(segmentsOf(text, spans));
+  let firstSelected = "";
+
+  for (const [lineIndex, line] of lines.entries()) {
+    const index = line.findIndex((segment) =>
+      segment.spans.some((span) => span.findingId === selectedFindingId),
+    );
+
+    if (index !== -1) {
+      firstSelected = `${lineIndex}:${index}`;
+      break;
+    }
+  }
+
   return (
-    <pre className="font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap break-words">
-      {segmentsOf(text, spans).map((segment, index) => {
-        if (segment.findingIds.length === 0) {
-          return <span key={index}>{segment.text}</span>;
-        }
-
-        const selected = segment.findingIds.includes(selectedFindingId ?? "");
-
-        return (
-          <mark
-            key={index}
-            onClick={() => onSelectFinding(segment.findingIds[0])}
-            className={cn(
-              "cursor-pointer rounded-[3px] px-px",
-              selected
-                ? "bg-highlight text-foreground"
-                : "bg-highlight/50 text-foreground",
-            )}
+    <div className="py-3 font-mono text-[0.8125rem] leading-6">
+      {lines.map((line, lineIndex) => (
+        <div key={lineIndex} className="grid grid-cols-[3.25rem_minmax(0,1fr)]">
+          <span
+            aria-hidden="true"
+            className="pr-4 text-right text-muted-foreground/70 tabular-nums select-none"
           >
-            {segment.text}
-          </mark>
-        );
-      })}
-    </pre>
+            {lineIndex + 1}
+          </span>
+          <span className="pr-4 break-words whitespace-pre-wrap">
+            {line.length === 0 && "\u200b"}
+            {line.map((segment, index) => {
+              if (segment.spans.length === 0) {
+                return <span key={index}>{segment.text}</span>;
+              }
+
+              const selected = segment.spans.some((span) => span.findingId === selectedFindingId);
+
+              const redacted = segment.spans.every((span) => span.decision === "redact");
+
+              const settled = segment.spans.every(
+                (span) => span.decision !== "open" && span.decision !== "redact",
+              );
+
+              const isFirstSelected = firstSelected === `${lineIndex}:${index}`;
+
+              return (
+                <mark
+                  key={index}
+                  ref={
+                    isFirstSelected
+                      ? (node) => {
+                          selectedRef.current = node;
+                        }
+                      : undefined
+                  }
+                  onClick={() => onSelectFinding(segment.spans[0].findingId)}
+                  title={redacted ? "Approved redaction" : undefined}
+                  className={cn(
+                    "cursor-pointer rounded-[2px] bg-highlight/55 text-foreground transition-colors duration-150",
+                    settled &&
+                      "bg-transparent underline decoration-muted-foreground/50 decoration-dotted underline-offset-4",
+                    redacted && "bg-redaction text-transparent",
+                    selected &&
+                      "bg-highlight text-foreground shadow-[inset_0_-2px_0_var(--primary)]",
+                  )}
+                >
+                  {segment.text}
+                </mark>
+              );
+            })}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }

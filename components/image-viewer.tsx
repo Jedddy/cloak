@@ -9,9 +9,10 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Box, Finding } from "@/lib/contract/schemas";
+import type { Box, Decision, Finding } from "@/lib/contract/schemas";
+import { SquareDashedMousePointer, Trash2 } from "lucide-react";
 
-type PlacedBox = { findingId: string; box: Box; index: number };
+type PlacedBox = { findingId: string; box: Box; index: number; decision: Decision };
 
 type Fraction = { x: number; y: number; w: number; h: number };
 
@@ -87,7 +88,12 @@ export function ImageViewer({
       ),
     );
 
-    return boxes.map((box, index) => ({ findingId: finding.id, box, index }));
+    return boxes.map((box, index) => ({
+      findingId: finding.id,
+      box,
+      index,
+      decision: finding.decision,
+    }));
   });
 
   const drawActive = tool === "draw" || (needsBox && tool === "select");
@@ -190,6 +196,7 @@ export function ImageViewer({
       const movedBox: PlacedBox = {
         findingId: drag.findingId,
         index: drag.index,
+        decision: "open",
         box: toPixels(
           {
             x: drag.origin.x + dx,
@@ -235,7 +242,7 @@ export function ImageViewer({
     ? placed.map((item) =>
         item.findingId === dragOverride.findingId &&
         item.index === dragOverride.index
-          ? dragOverride
+          ? { ...item, box: dragOverride.box }
           : item,
       )
     : placed;
@@ -249,17 +256,19 @@ export function ImageViewer({
   );
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-col">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1.5 border-b bg-sheet/95 px-3 py-1.5">
         <Button
-          variant={tool === "draw" ? "default" : "outline"}
+          variant={tool === "draw" ? "default" : "ghost"}
           size="xs"
+          aria-pressed={tool === "draw"}
           onClick={() => setTool(tool === "draw" ? "select" : "draw")}
         >
+          <SquareDashedMousePointer data-icon="inline-start" />
           Draw box
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size="xs"
           disabled={!selectedFindingId || !selectedHasBox}
           onClick={() => {
@@ -268,19 +277,21 @@ export function ImageViewer({
             }
           }}
         >
+          <Trash2 data-icon="inline-start" />
           Delete box
         </Button>
         {needsBox && (
-          <span className="text-xs text-muted-foreground">
-            This finding needs a region: drag over the image to draw it.
+          <span className="ml-1 rounded-sm bg-warning-muted px-1.5 py-0.5 text-xs text-warning">
+            This finding has no region. Drag over the image to draw the box
+            that export fills.
           </span>
         )}
       </div>
-      <div className="overflow-auto rounded-lg border border-border bg-sheet">
+      <div className="overflow-auto p-4">
         <div
           ref={containerRef}
           className={cn(
-            "relative inline-block max-w-none align-top",
+            "relative mx-auto w-fit max-w-full ring-1 ring-border",
             drawActive ? "cursor-crosshair" : "cursor-default",
           )}
           style={{ touchAction: "none" }}
@@ -292,7 +303,7 @@ export function ImageViewer({
           <img
             src={imageUrl}
             alt={fileName}
-            className="block max-h-[60vh] w-auto max-w-full"
+            className="block h-auto w-auto max-w-full"
             draggable={false}
             onLoad={(event) => {
               const img = event.currentTarget;
@@ -309,6 +320,7 @@ export function ImageViewer({
                   : toFraction(item.box, natural);
 
               const selected = item.findingId === selectedFindingId;
+              const settled = item.decision !== "open" && item.decision !== "redact";
 
               return (
                 <div
@@ -316,11 +328,13 @@ export function ImageViewer({
                   data-box
                   data-finding={item.findingId}
                   data-index={item.index}
+                  title={item.decision === "redact" ? "Approved redaction" : undefined}
                   className={cn(
-                    "absolute border-2",
-                    selected
-                      ? "border-primary bg-primary/10"
-                      : "border-redaction/70 bg-redaction/10",
+                    "absolute cursor-pointer border-2 border-warning bg-warning/10 transition-colors duration-150",
+                    settled && "border-dashed border-muted-foreground bg-transparent",
+                    item.decision === "redact" && "border-redaction bg-redaction",
+                    selected && "border-primary ring-2 ring-primary/30 ring-offset-1",
+                    selected && item.decision !== "redact" && "bg-primary/10",
                   )}
                   style={styleOf(rect)}
                 />
