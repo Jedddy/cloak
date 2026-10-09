@@ -2,19 +2,20 @@ import { randomUUID } from "node:crypto";
 
 import { ApiError } from "@/lib/contract/errors";
 import type { Layers, RelatedSource } from "@/lib/contract/interfaces";
-import type {
-  AllowRule,
-  DocumentModel,
-  Detection,
-  FileEntry,
-  Finding,
-  FindingCandidate,
-  FindingDecisionBody,
-  FindingDecisionResult,
-  Package,
-  RegionBody,
-  RelatedBody,
-  RelatedResult,
+import {
+  pageOfAnchor,
+  type AllowRule,
+  type DocumentModel,
+  type Detection,
+  type FileEntry,
+  type Finding,
+  type FindingCandidate,
+  type FindingDecisionBody,
+  type FindingDecisionResult,
+  type Package,
+  type RegionBody,
+  type RelatedBody,
+  type RelatedResult,
 } from "@/lib/contract/schemas";
 
 import { findingQuotes, sharesEvidence } from "./carry";
@@ -143,6 +144,22 @@ function manualDetection(box: Detection["evidence"][number] & { type: "image-reg
   return { method: "manual", ruleId: null, evidence: [box] };
 }
 
+/** A manual finding with the fields `add` and `add-span` share. */
+function manualFinding(
+  body: { fileId: string; category: Finding["category"] },
+  fields: Pick<Finding, "detections" | "title" | "reason" | "decision">,
+): Finding {
+  return {
+    id: `fnd-${randomUUID()}`,
+    fileId: body.fileId,
+    category: body.category,
+    suggestedAction: "redact",
+    allowedByRecipient: false,
+    relatedGroupId: null,
+    ...fields,
+  };
+}
+
 async function cachedModel(packageId: string, fileId: string): Promise<DocumentModel> {
   const model = await readDocument(packageId, fileId);
 
@@ -159,9 +176,9 @@ async function boxAnchor(pkg: Package, file: FileEntry, anchor: string | null | 
     return undefined;
   }
 
-  const page = /^page:([1-9]\d*)$/.exec(anchor ?? "");
+  const page = pageOfAnchor(anchor);
 
-  if (page === null || Number(page[1]) > (await cachedModel(pkg.id, file.id)).pages.length) {
+  if (page === null || page > (await cachedModel(pkg.id, file.id)).pages.length) {
     throw new ApiError("bad-request", "Draw the box on a page of the document.");
   }
 
@@ -181,18 +198,12 @@ export async function saveRegion(packageId: string, body: RegionBody, layers: La
 
       const anchor = await boxAnchor(pkg, file, body.anchor);
 
-      const created: Finding = {
-        id: `fnd-${randomUUID()}`,
-        fileId: body.fileId,
-        category: body.category,
+      const created = manualFinding(body, {
         detections: [manualDetection({ type: "image-region", box: body.box, quote: null, anchor })],
         title: "Manual region",
         reason: "You drew this region.",
-        suggestedAction: "redact",
-        allowedByRecipient: false,
         decision: "redact",
-        relatedGroupId: null,
-      };
+      });
 
       return { findings: [...current, created], result: [created] };
     }
@@ -211,18 +222,12 @@ export async function saveRegion(packageId: string, body: RegionBody, layers: La
       const quote = text.slice(body.start, body.end);
       const line = text.slice(0, body.start).split("\n").length - 1;
 
-      const created: Finding = {
-        id: `fnd-${randomUUID()}`,
-        fileId: body.fileId,
-        category: body.category,
+      const created = manualFinding(body, {
         detections: [{ method: "manual", ruleId: null, evidence: [{ type: "text-span", start: body.start, end: body.end, line, quote }] }],
         title: "Manual selection",
         reason: "You selected this text.",
-        suggestedAction: "redact",
-        allowedByRecipient: false,
         decision: "open",
-        relatedGroupId: null,
-      };
+      });
 
       return { findings: [...current, created], result: [created] };
     }

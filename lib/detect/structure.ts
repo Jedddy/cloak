@@ -1,5 +1,5 @@
 import type { StructureInput } from "@/lib/contract/interfaces";
-import type { FindingCandidate } from "@/lib/contract/schemas";
+import { hiddenAnchor, type FindingCandidate } from "@/lib/contract/schemas";
 
 // Structure checks (overview section 11 layer 1, plan R4-R8). Pure bytes
 // and text in, findings out. No file or network I/O.
@@ -392,7 +392,7 @@ export function structure(input: StructureInput): Promise<FindingCandidate[]> {
         {
           method: "structure",
           ruleId: `document-${item.kind}`,
-          evidence: [{ type: "file-structure", note: item.note, byteOffset: null, anchor: `hidden:${item.id}` }],
+          evidence: [{ type: "file-structure", note: item.note, byteOffset: null, anchor: hiddenAnchor(item.id) }],
         },
       ],
       title: item.note,

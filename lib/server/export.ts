@@ -4,7 +4,7 @@ import JSZip from "jszip";
 
 import { ApiError } from "@/lib/contract/errors";
 import type { Layers } from "@/lib/contract/interfaces";
-import { documentFormat, type DocumentNote, type ExportStartBody, type FileEntry, type Finding, type Job, type Package } from "@/lib/contract/schemas";
+import { documentFormat, hiddenIdOf, RESIDUE_MIN_NEEDLE, type DocumentNote, type ExportStartBody, type FileEntry, type Finding, type Job, type Package } from "@/lib/contract/schemas";
 
 import { findingQuotes } from "./carry";
 import { liveJob, startJob, type JobProgress } from "./jobs";
@@ -34,6 +34,11 @@ import { verifyReviewed, type ReviewedCopy } from "./verify";
 // reviewed/ with the original names, proves the originals unchanged, and
 // verifies the copies (R20-R23).
 
+/** The comparison key of a quote: trimmed and lowercased (whitespace inside is kept). */
+function foldQuote(quote: string): string {
+  return quote.trim().toLowerCase();
+}
+
 /** Files that get a reviewed copy: not excluded, and analyzed by the last scan. */
 function exportable(files: FileEntry[]): FileEntry[] {
   return files.filter((file) => !file.excluded && file.status === "processed");
@@ -49,7 +54,7 @@ function redactable(finding: Finding, file: FileEntry): boolean {
       (entry) =>
         entry.type === "text-span" ||
         (entry.type === "image-region" && entry.anchor) ||
-        (entry.type === "file-structure" && entry.anchor?.startsWith("hidden:")),
+        hiddenIdOf(entry) !== null,
     );
   }
 
@@ -112,9 +117,7 @@ async function writeReviewedCopies(pkg: Package, layers: Layers, progress: JobPr
       const spans = evidence.flatMap(({ entry }) => (entry.type === "text-span" ? [{ start: entry.start, end: entry.end }] : []));
       const regions = evidence.flatMap(({ entry }) => (entry.type === "image-region" && entry.anchor ? [{ anchor: entry.anchor, box: entry.box }] : []));
 
-      const removeHidden = evidence.flatMap(({ entry }) =>
-        entry.type === "file-structure" && entry.anchor?.startsWith("hidden:") ? [entry.anchor.slice("hidden:".length)] : [],
-      );
+      const removeHidden = evidence.flatMap(({ entry }) => hiddenIdOf(entry) ?? []);
 
       const result = await layers.document.redact({ fileName: file.originalName, format, bytes, model, spans, regions, removeHidden });
 
@@ -125,19 +128,19 @@ async function writeReviewedCopies(pkg: Package, layers: Layers, progress: JobPr
       const kept = new Set(
         findings
           .filter((finding) => finding.fileId === file.id && finding.decision !== "redact")
-          .flatMap((finding) => findingQuotes(finding).map((quote) => quote.trim().toLowerCase())),
+          .flatMap((finding) => findingQuotes(finding).map((quote) => foldQuote(quote))),
       );
 
       const hiddenQuotes = model.hidden.flatMap((item) => (item.quote !== null && removeHidden.includes(item.id) ? [item.quote] : []));
       const candidates = [...redacted.flatMap((finding) => findingQuotes(finding)), ...hiddenQuotes];
-      const unique = new Map(candidates.map((quote) => [quote.trim().toLowerCase(), quote.trim()]));
+      const unique = new Map(candidates.map((quote) => [foldQuote(quote), quote.trim()]));
 
       for (const [key, needle] of unique) {
         if (kept.has(key)) {
           continue;
         }
 
-        if (needle.length < 3) {
+        if (needle.length < RESIDUE_MIN_NEEDLE) {
           notes.push({ fileId: file.id, kind: "residue-skipped", note: `${file.originalName}: "${needle}" is too short to check in the reviewed copy.` });
           continue;
         }

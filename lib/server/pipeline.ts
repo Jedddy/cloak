@@ -17,7 +17,7 @@ import type {
   RecipientProfile,
   ScanStartBody,
 } from "@/lib/contract/schemas";
-import { documentFormat } from "@/lib/contract/schemas";
+import { documentFormat, hiddenIdOf, imageAnchor, pageAnchor } from "@/lib/contract/schemas";
 
 import { carryDecisions } from "./carry";
 import { buildCoverage } from "./coverage";
@@ -139,6 +139,22 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
       const bytes = await input.readFile(file);
       let text: string | null = null;
       let model: DocumentModel | null = null;
+
+      // OCR from the cache under `key`, or computed and cached.
+      const cachedOcr = async (key: string, imageBytes: Uint8Array): Promise<OcrResult> => {
+        const cached = await input.ocrCache.read(key);
+
+        if (cached !== null) {
+          return cached;
+        }
+
+        const fresh = await layers.detect.ocr({ fileId: file.id, fileName: file.originalName, bytes: imageBytes });
+
+        await input.ocrCache.write(key, fresh);
+
+        return fresh;
+      };
+
       const imageOcr: { entry: DocumentModel["images"][number]; bytes: Uint8Array; mime: string; ocr: OcrResult }[] = [];
 
       if (kind === "text") {
@@ -158,9 +174,10 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
 
         const source = { fileName: file.originalName, format, bytes };
 
-        model = await layers.document.extract(source);
+        const extracted = await layers.document.extract(source);
 
-        const extracted = model;
+        model = extracted;
+
         const images = await layers.document.images({ ...source, model: extracted });
 
         // OCR for each embedded image and each PDF page that needs it, cached per image.
@@ -173,13 +190,7 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
 
           progress.setFile(file.id, "ocr");
 
-          const key = `${file.id}-i${index}`;
-          let ocr = await input.ocrCache.read(key);
-
-          if (ocr === null) {
-            ocr = await layers.detect.ocr({ fileId: file.id, fileName: file.originalName, bytes: image.bytes });
-            await input.ocrCache.write(key, ocr);
-          }
+          const ocr = await cachedOcr(`${file.id}-i${index}`, image.bytes);
 
           model = layers.document.withOcr({ model, imageId: entry.id, ocrWords: ocr.words });
           imageOcr.push({ entry, bytes: image.bytes, mime: image.mime, ocr });
@@ -211,17 +222,7 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
 
         progress.setFile(file.id, "ocr");
 
-        const cached = await input.ocrCache.read(file.id);
-
-        if (cached !== null) {
-          return cached;
-        }
-
-        const fresh = await layers.detect.ocr({ fileId: file.id, fileName: file.originalName, bytes });
-
-        await input.ocrCache.write(file.id, fresh);
-
-        return fresh;
+        return cachedOcr(file.id, bytes);
       };
 
       const [structureHits, ocr] = await Promise.all([structure, loadOcr()]);
@@ -275,7 +276,7 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
             for (const image of imageOcr) {
               progress.setFile(file.id, "ai-vision");
 
-              const anchor = image.entry.page === null ? `image:${image.entry.id}` : `page:${image.entry.page}`;
+              const anchor = image.entry.page === null ? imageAnchor(image.entry.id) : pageAnchor(image.entry.page);
               let ocrWords = image.ocr.words;
 
               // A PDF page also gives the model its text-layer words.
@@ -332,7 +333,7 @@ export async function analyzeFiles(input: AnalysisInput): Promise<AnalysisResult
 
       for (const candidate of profiled) {
         const hiddenItem = candidate.detections.some((detection) =>
-          detection.evidence.some((evidence) => evidence.type === "file-structure" && evidence.anchor?.startsWith("hidden:")),
+          detection.evidence.some((evidence) => hiddenIdOf(evidence) !== null),
         );
 
         // Hidden content in a document is removed unless the user decides otherwise (R9).

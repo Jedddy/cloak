@@ -10,6 +10,7 @@ import { fixtureProfiles } from "@/lib/contract/fixtures";
 import {
   CoverageReportSchema,
   DOCUMENT_MIMES,
+  DocumentFormatSchema,
   DocumentModelSchema,
   FindingSchema,
   OcrResultSchema,
@@ -344,18 +345,19 @@ const macroReason = "Macro-enabled documents are not supported.";
 const macroExtensions: ReadonlySet<string> = new Set(["docm", "xlsm", "pptm"]);
 
 /** Per OOXML format: the part that proves it, the mismatch wording, and the encrypted-file reason. */
-type OoxmlFormat = { format: DocumentFormat; mainPart: string; label: string; encrypted: string };
+type OoxmlFormat = { mainPart: string; label: string; encrypted: string };
 
-const ooxmlFormats: ReadonlyMap<string, OoxmlFormat> = new Map([
-  ["docx", { format: "docx", mainPart: "word/document.xml", label: "DOCX, but the content is not a Word document", encrypted: "Encrypted document" }],
-  ["xlsx", { format: "xlsx", mainPart: "xl/workbook.xml", label: "XLSX, but the content is not an Excel workbook", encrypted: "Encrypted workbook" }],
-  ["pptx", { format: "pptx", mainPart: "ppt/presentation.xml", label: "PPTX, but the content is not a PowerPoint presentation", encrypted: "Encrypted presentation" }],
+const ooxmlFormats: ReadonlyMap<DocumentFormat, OoxmlFormat> = new Map([
+  ["docx", { mainPart: "word/document.xml", label: "DOCX, but the content is not a Word document", encrypted: "Encrypted document" }],
+  ["xlsx", { mainPart: "xl/workbook.xml", label: "XLSX, but the content is not an Excel workbook", encrypted: "Encrypted workbook" }],
+  ["pptx", { mainPart: "ppt/presentation.xml", label: "PPTX, but the content is not a PowerPoint presentation", encrypted: "Encrypted presentation" }],
 ]);
 
 /** Supported kinds follow M4: extension, plus a content check for images and documents. */
 async function detectKind(extension: string, bytes: Uint8Array): Promise<KindResult> {
   const textMime = textMimes.get(extension);
   const unsupported = "application/octet-stream";
+  const reject = (reason: string): KindResult => ({ kind: "unsupported", mime: unsupported, reason });
 
   if (textMime !== undefined) {
     return { kind: "text", mime: textMime, reason: null };
@@ -379,28 +381,29 @@ async function detectKind(extension: string, bytes: Uint8Array): Promise<KindRes
 
   if (extension === "pdf") {
     if (!startsWith(bytes, pdfMagic)) {
-      return { kind: "unsupported", mime: unsupported, reason: "The file name says PDF, but the content is not PDF." };
+      return reject("The file name says PDF, but the content is not PDF.");
     }
 
-    if (Buffer.from(bytes).toString("latin1").includes("/Encrypt")) {
-      return { kind: "unsupported", mime: unsupported, reason: "Encrypted PDF" };
+    if (Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).includes("/Encrypt", 0, "latin1")) {
+      return reject("Encrypted PDF");
     }
 
     return { kind: "document", mime: DOCUMENT_MIMES.pdf, reason: null };
   }
 
   if (macroExtensions.has(extension)) {
-    return { kind: "unsupported", mime: unsupported, reason: macroReason };
+    return reject(macroReason);
   }
 
-  const ooxml = ooxmlFormats.get(extension);
+  const format = DocumentFormatSchema.safeParse(extension).data;
+  const ooxml = format === undefined ? undefined : ooxmlFormats.get(format);
 
-  if (ooxml !== undefined) {
-    const mismatch = { kind: "unsupported", mime: unsupported, reason: `The file name says ${ooxml.label}.` } as const;
+  if (format !== undefined && ooxml !== undefined) {
+    const mismatch = reject(`The file name says ${ooxml.label}.`);
 
     if (startsWith(bytes, cfbMagic)) {
-      if (Buffer.from(bytes).includes(Buffer.from("EncryptionInfo", "utf16le"))) {
-        return { kind: "unsupported", mime: unsupported, reason: ooxml.encrypted };
+      if (Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).includes(Buffer.from("EncryptionInfo", "utf16le"))) {
+        return reject(ooxml.encrypted);
       }
 
       return mismatch;
@@ -423,10 +426,10 @@ async function detectKind(extension: string, bytes: Uint8Array): Promise<KindRes
     }
 
     if (Object.keys(zip.files).some((name) => name.endsWith("vbaProject.bin"))) {
-      return { kind: "unsupported", mime: unsupported, reason: macroReason };
+      return reject(macroReason);
     }
 
-    return { kind: "document", mime: DOCUMENT_MIMES[ooxml.format], reason: null };
+    return { kind: "document", mime: DOCUMENT_MIMES[format], reason: null };
   }
 
   return { kind: "unsupported", mime: unsupported, reason: "This file type is not supported." };

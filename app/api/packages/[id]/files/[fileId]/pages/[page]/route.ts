@@ -1,8 +1,7 @@
 import { connection } from "next/server";
 
 import { ApiError } from "@/lib/contract/errors";
-import { documentFormat } from "@/lib/contract/schemas";
-import { respond } from "@/lib/server/http";
+import { pdfPageParam, pngResponse, respond } from "@/lib/server/http";
 import { layers } from "@/lib/server/layers";
 import { findFile } from "@/lib/server/packages";
 import { readOriginal, readPackage, readPageRender, writePageRender } from "@/lib/server/store";
@@ -17,11 +16,7 @@ export async function GET(
   return respond(async () => {
     const { id, fileId, page: pageParam } = await context.params;
     const file = findFile(await readPackage(id), fileId);
-    const page = Number(pageParam);
-
-    if (documentFormat(file.mime) !== "pdf" || !Number.isInteger(page) || page < 1) {
-      throw new ApiError("not-found", "No such page.");
-    }
+    const page = pdfPageParam(file, pageParam);
 
     let png = await readPageRender(id, fileId, page);
 
@@ -33,6 +28,6 @@ export async function GET(
       await writePageRender(id, fileId, page, png);
     }
 
-    return new Response(png.slice(), { headers: { "Content-Type": "image/png", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" } });
+    return pngResponse(png);
   });
 }

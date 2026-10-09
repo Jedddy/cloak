@@ -450,6 +450,40 @@ export const EvidenceSchema = z.discriminatedUnion("type", [
 
 export type Evidence = z.infer<typeof EvidenceSchema>;
 
+/** Residue needles shorter than this are too short to check in a reviewed copy. */
+export const RESIDUE_MIN_NEEDLE = 3;
+
+/** The anchor of a hidden item. */
+export function hiddenAnchor(id: string): string {
+  return `hidden:${id}`;
+}
+
+/** The hidden item id of file-structure evidence anchored with `hidden:`, or null. */
+export function hiddenIdOf(evidence: Evidence): string | null {
+  if (evidence.type !== "file-structure" || !evidence.anchor?.startsWith("hidden:")) {
+    return null;
+  }
+
+  return evidence.anchor.slice("hidden:".length);
+}
+
+/** The anchor of a box on a document page (1-based). */
+export function pageAnchor(page: number): string {
+  return `page:${page}`;
+}
+
+/** The anchor of a box on an embedded document image. */
+export function imageAnchor(id: string): string {
+  return `image:${id}`;
+}
+
+/** The page number of a `page:<positive int>` anchor, or null. */
+export function pageOfAnchor(anchor: string | null | undefined): number | null {
+  const match = /^page:([1-9]\d*)$/.exec(anchor ?? "");
+
+  return match === null ? null : Number(match[1]);
+}
+
 export const DetectionSchema = z.object({
   method: DetectionMethodSchema,
   ruleId: z.string().nullable(),

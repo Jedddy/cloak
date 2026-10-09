@@ -3,9 +3,8 @@ import { readFile } from "node:fs/promises";
 import { connection } from "next/server";
 
 import { ApiError } from "@/lib/contract/errors";
-import { documentFormat } from "@/lib/contract/schemas";
 import { reviewedName } from "@/lib/server/export";
-import { respond } from "@/lib/server/http";
+import { pdfPageParam, pngResponse, respond } from "@/lib/server/http";
 import { layers } from "@/lib/server/layers";
 import { findFile } from "@/lib/server/packages";
 import { workspacePaths } from "@/lib/server/paths";
@@ -21,11 +20,7 @@ export async function GET(
   return respond(async () => {
     const { id, fileId, page: pageParam } = await context.params;
     const file = findFile(await readPackage(id), fileId);
-    const page = Number(pageParam);
-
-    if (documentFormat(file.mime) !== "pdf" || !Number.isInteger(page) || page < 1) {
-      throw new ApiError("not-found", "No such page.");
-    }
+    const page = pdfPageParam(file, pageParam);
 
     const name = await reviewedName(id, fileId);
     const bytes = new Uint8Array(await readFile(workspacePaths.reviewed(id, name)));
@@ -34,6 +29,6 @@ export async function GET(
       throw new ApiError("not-found", "No such page.");
     });
 
-    return new Response(png.slice(), { headers: { "Content-Type": "image/png", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" } });
+    return pngResponse(png);
   });
 }

@@ -111,22 +111,22 @@ export async function verifyReviewed(input: VerifyInput): Promise<VerifyOutput> 
     for (const needle of await input.layers.document.residue({ format, bytes, needles: copy.needles })) {
       // Built already profiled: a recipient allow rule must not hide leftover text.
       candidates.push({
-          fileId: copy.file.id,
-          category: "hidden-data",
-          detections: [
-            {
-              method: "structure",
-              ruleId: "residue",
-              evidence: [
-                { type: "file-structure", note: `"${needle}" is still in the reviewed copy.`, byteOffset: null, anchor: `residue:${needle.toLowerCase()}` },
-              ],
-            },
-          ],
-          title: "Redacted text still present in the reviewed copy",
-          reason: "Text that was approved for removal is still in the reviewed file.",
-          relatedGroupId: null,
-          suggestedAction: "redact",
-          allowedByRecipient: false,
+        fileId: copy.file.id,
+        category: "hidden-data",
+        detections: [
+          {
+            method: "structure",
+            ruleId: "residue",
+            evidence: [
+              { type: "file-structure", note: `"${needle}" is still in the reviewed copy.`, byteOffset: null, anchor: `residue:${needle.toLowerCase()}` },
+            ],
+          },
+        ],
+        title: "Redacted text still present in the reviewed copy",
+        reason: "Text that was approved for removal is still in the reviewed file.",
+        relatedGroupId: null,
+        suggestedAction: "redact",
+        allowedByRecipient: false,
       });
     }
   }
