@@ -14,7 +14,7 @@ import {
   type VerificationResult,
 } from "@/lib/contract/schemas";
 
-import { sharesEvidence } from "./carry";
+import { findingQuotes, sharesEvidence } from "./carry";
 import { buildCoverage } from "./coverage";
 import type { JobProgress } from "./jobs";
 import { analyzeFiles } from "./pipeline";
@@ -49,15 +49,7 @@ export type VerifyOutput = {
 };
 
 function quotes(finding: FindingCandidate): Set<string> {
-  return new Set(
-    finding.detections.flatMap((detection) =>
-      detection.evidence.flatMap((evidence) => {
-        const quote = evidence.type === "text-span" || evidence.type === "image-region" ? evidence.quote : null;
-
-        return quote ? [quote.trim().toLowerCase()] : [];
-      }),
-    ),
-  );
+  return new Set(findingQuotes(finding).map((quote) => quote.trim().toLowerCase()));
 }
 
 /** Text redaction shifts spans, so a shared quote also counts as the same finding. */

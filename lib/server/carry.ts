@@ -41,6 +41,17 @@ export function sharesEvidence(left: FindingCandidate, right: FindingCandidate):
   return [...fingerprints(right)].some((key) => keys.has(key));
 }
 
+/** The quoted text of every evidence entry that has one, in order. */
+export function findingQuotes(finding: FindingCandidate): string[] {
+  return finding.detections.flatMap((detection) =>
+    detection.evidence.flatMap((evidence) => {
+      const quote = evidence.type === "text-span" || evidence.type === "image-region" ? evidence.quote : null;
+
+      return quote ? [quote] : [];
+    }),
+  );
+}
+
 function isManual(finding: Finding): boolean {
   return finding.detections.every((detection) => detection.method === "manual");
 }
@@ -52,12 +63,13 @@ function isManual(finding: Finding): boolean {
  * the user can remove.
  */
 export function carryDecisions(candidates: ProfiledCandidate[], previous: Finding[]): Finding[] {
-  const unmatched = previous.filter((finding) => !isManual(finding));
+  const unmatched = previous.flatMap((finding) => (isManual(finding) ? [] : [{ finding, keys: fingerprints(finding) }]));
   const manual = previous.filter(isManual);
 
   const carried = candidates.map((candidate): Finding => {
-    const index = unmatched.findIndex((finding) => sharesEvidence(candidate, finding));
-    const [match] = index === -1 ? [] : unmatched.splice(index, 1);
+    const keys = fingerprints(candidate);
+    const index = unmatched.findIndex((entry) => [...entry.keys].some((key) => keys.has(key)));
+    const match = index === -1 ? undefined : unmatched.splice(index, 1)[0]?.finding;
 
     if (match === undefined) {
       return { ...candidate, id: `fnd-${randomUUID()}`, decision: "open" };

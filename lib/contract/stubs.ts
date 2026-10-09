@@ -6,7 +6,7 @@ import {
   fixtureOcrByFileName,
 } from "./fixtures";
 import type { Layers } from "./interfaces";
-import type { DetectionMethod, FindingCandidate } from "./schemas";
+import type { DetectionMethod, FindingCandidate, SuggestedAction } from "./schemas";
 
 // Stub layers return the demo-package fixtures by file name, so the
 // pipeline runs end to end before Streams 2 and 3 merge (KTD2).
@@ -65,7 +65,7 @@ export const stubLayers: Layers = {
       fixtureCandidates(input.fileName, input.fileId, ["protected-term"]),
     applyProfile: (input) =>
       input.candidates.map((candidate) => {
-        let suggestedAction: "redact" | "needs-decision" | "keep" = "needs-decision";
+        let suggestedAction: SuggestedAction = "needs-decision";
 
         if (input.profile.remove.includes(candidate.category)) {
           suggestedAction = "redact";

@@ -16,7 +16,7 @@ import type {
   RelatedResult,
 } from "@/lib/contract/schemas";
 
-import { sharesEvidence } from "./carry";
+import { findingQuotes, sharesEvidence } from "./carry";
 import { countFindings } from "./coverage";
 import { findFile } from "./packages";
 import { ocrText, recipientContext } from "./pipeline";
@@ -67,23 +67,10 @@ function warningsFor(layers: Layers, pkg: Package, findings: Finding[]) {
   return layers.detect.inconsistentRedactions({ findings, protectedTerms: pkg.protectedTerms, files: pkg.files });
 }
 
-/** The exact text of the first quote in a finding, for an allow rule. */
-function quoteOf(finding: Finding): string | null {
-  for (const detection of finding.detections) {
-    for (const evidence of detection.evidence) {
-      if ((evidence.type === "text-span" || evidence.type === "image-region") && evidence.quote) {
-        return evidence.quote;
-      }
-    }
-  }
-
-  return null;
-}
-
 /** `keep-and-remember` adds an allow rule to the package's recipient; never for a secret (M14). */
 async function rememberKeeps(pkg: Package, findings: Finding[]): Promise<void> {
   const rules = findings.flatMap((finding) => {
-    const matchText = quoteOf(finding);
+    const matchText = findingQuotes(finding)[0] ?? null;
 
     if (finding.category === "secret" || matchText === null) {
       return [];

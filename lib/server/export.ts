@@ -4,7 +4,7 @@ import JSZip from "jszip";
 
 import { ApiError } from "@/lib/contract/errors";
 import type { Layers } from "@/lib/contract/interfaces";
-import type { ExportStartBody, FileEntry, Finding, Job } from "@/lib/contract/schemas";
+import type { ExportStartBody, FileEntry, Finding, Job, Package } from "@/lib/contract/schemas";
 
 import { liveJob, startJob, type JobProgress } from "./jobs";
 import { logEvent } from "./log";
@@ -63,8 +63,8 @@ function uniqueName(name: string, used: Set<string>): string {
 
 const utf8 = new TextDecoder("utf-8");
 
-async function writeReviewedCopies(packageId: string, layers: Layers, progress: JobProgress): Promise<ReviewedCopy[]> {
-  const pkg = await readPackage(packageId);
+async function writeReviewedCopies(pkg: Package, layers: Layers, progress: JobProgress): Promise<ReviewedCopy[]> {
+  const packageId = pkg.id;
   const findings = await readFindings(packageId);
   const reviewedDir = workspacePaths.reviewedDir(packageId);
   const used = new Set<string>();
@@ -114,8 +114,8 @@ async function writeReviewedCopies(packageId: string, layers: Layers, progress: 
 }
 
 /** R21: every original still has the SHA-256 it had at upload. */
-async function checkOriginals(packageId: string): Promise<void> {
-  const pkg = await readPackage(packageId);
+async function checkOriginals(pkg: Package): Promise<void> {
+  const packageId = pkg.id;
 
   for (const file of pkg.files) {
     if (sha256(await readOriginal(packageId, file)) !== file.sha256) {
@@ -126,11 +126,10 @@ async function checkOriginals(packageId: string): Promise<void> {
 
 async function runExport(packageId: string, layers: Layers, progress: JobProgress): Promise<void> {
   try {
-    const copies = await writeReviewedCopies(packageId, layers, progress);
-
-    await checkOriginals(packageId);
-
     const pkg = await readPackage(packageId);
+    const copies = await writeReviewedCopies(pkg, layers, progress);
+
+    await checkOriginals(pkg);
     const settings = await readEffectiveSettings();
     let resolution = await layers.ai.resolveMode({ settings });
 
