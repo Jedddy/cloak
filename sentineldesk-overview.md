@@ -135,7 +135,7 @@ Vendor claims (no independent review found):
 
 ### Positioning
 
-**Do not compete on PII redaction of PDF and Office documents.** Philter does it on more formats.
+**Do not compete as a general PII redactor of PDF and Office documents.** Philter does it on more formats. Cloak redacts documents as part of a recipient-aware package review.
 
 | Question | Existing tools | Cloak |
 |----------|----------------|--------------|
@@ -210,11 +210,11 @@ These are requirements. Every feature must follow them.
 | S5 | File System Access API export to a user-selected folder (Chrome/Edge) |
 | S6 | "Outbox" watched folder |
 | S7 | Browser extension that suggests a review when files are dropped into a sharing site (sends files only to localhost) |
-| S8 | PDF **inspection only** (findings, no redaction) |
+| S8 | Delivered in full: PDF, DOCX, XLSX, and PPTX inspection with native redaction (see `docs/plans/2026-10-09-2140-feat-document-formats-plan.md`) |
 
 ### Out of scope (do not plan)
 
-- PDF redaction, Office files (DOCX/XLSX/PPTX), archives (ZIP/RAR), email files.
+- Legacy binary Office (DOC/XLS/PPT), ODF, archives (ZIP/RAR), email files. (PDF, DOCX, XLSX, and PPTX are in scope since the document-formats plan; §154 stays their threat model.)
 - Recursive folder import (MVP accepts a flat list of files).
 - Automatic code changes (for example rewriting `.env` files with fake values).
 - Desktop shells (Tauri, Electron). The app is a local server + browser.
@@ -565,7 +565,7 @@ Rule sources to consider: gitleaks and secretlint rule sets (port the patterns; 
 
 - It needs **≥ 8 GB VRAM** for BF16 and runs **only on vLLM** through a dedicated Docker image. No Ollama, GGUF, or llama.cpp support is documented. The team GPU has 6 GB, and the other teammates have no GPU.
 - Its output is Markdown with grounding boxes (`<|det|>`) at layout level. The documentation does not say it gives **word-level** boxes. Redaction needs a tight box around one email or one token inside a line.
-- Its main strength is long multi-page documents (PDFs). The MVP input is screenshots, and PDF is out of scope.
+- Its main strength is long multi-page documents (PDFs). The MVP input was screenshots; PDF now uses MuPDF text extraction, with OCR only for textless pages.
 - **Possible later use:** behind the OCR provider interface for stretch S8 (PDF inspection), on a machine with ≥ 8 GB VRAM, as an OpenAI-compatible vLLM endpoint. Prompt must start with `<image>` (for example `<image>document parsing.`); the model has no chat template.
 
 If tesseract.js quality is too low on screenshots (spike F3), test PaddleOCR (PP-OCR) next: it is light and gives line-level boxes, which can be split into word boxes by character position.
@@ -859,7 +859,7 @@ LLM_VISION_MODEL=gemma4:e4b
 | Cloud model used in development hides weak local quality | Surprise at demo | Daily parity check on E4B. |
 | Judges see it as "just another redaction tool" | Weak pitch | Lead with screenshots, recipient profile, inconsistent redaction warning, trailing-data finding, and network-off demo. Name Philter openly and say what is different. |
 | Next.js 16 breaking changes | Lost time | Read the bundled docs first (spike F5). |
-| Scope creep (PDF, Office) | Unfinished MVP | Out-of-scope list. PDF only as stretch S8, inspection only. |
+| Scope creep (documents) | Unfinished MVP | PDF, DOCX, XLSX, and PPTX only, each with its own acceptance tests. Legacy Office and ODF stay out of scope. |
 
 ---
 

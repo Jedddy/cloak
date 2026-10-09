@@ -22,9 +22,9 @@ Success is a calm export: reviewed copies rebuilt with approved redactions, veri
 
 ## Positioning
 
-Recipient-aware review of a full sharing package. Existing local tools (closest: Philter Desktop) redact PII from one document at a time. Cloak checks a whole handoff package (screenshots, notes, config files) for what it reveals to one specific recipient: other clients, codenames, internal pricing, secrets, and PII. A recipient profile sets the suggested action. A local LLM and a vision model add context findings with exact-quote evidence. Package checks find related occurrences and inconsistent redactions across files. Export rebuilds the files and verification scans the reviewed copies again.
+Recipient-aware review of a full sharing package. Existing local tools (closest: Philter Desktop) redact PII from one document at a time. Cloak checks a whole handoff package (screenshots, notes, config files, and PDF, Word, Excel, and PowerPoint documents) for what it reveals to one specific recipient: other clients, codenames, internal pricing, secrets, and PII. A recipient profile sets the suggested action. A local LLM and a vision model add context findings with exact-quote evidence. Package checks find related occurrences and inconsistent redactions across files. Export rebuilds the files and verification scans the reviewed copies again.
 
-Cloak does not compete on PDF or Office PII redaction; other tools support more document formats.
+Cloak does not compete as a general PDF or Office PII redactor; other tools support more document formats. It redacts documents natively as part of a recipient-aware review of the whole package.
 
 ## Operating Context
 
@@ -35,14 +35,14 @@ Cloak does not compete on PDF or Office PII redaction; other tools support more 
 
 ## Capabilities and Constraints
 
-- **Inputs:** PNG, JPEG, and text files (`.txt`, `.md`, `.json`, `.csv`, `.env`, `.log`, `.yaml`). Other types are listed as "not supported" in coverage, never skipped silently. Flat file list only.
-- **Detection layers:** rules (secrets, PII, protected terms), offline OCR with word boxes, structure checks (metadata, trailing data after PNG `IEND` / JPEG `EOI`, zero-width characters, instruction-like text), LLM text analysis with quote matching, and vision analysis of screenshot UI regions. Manual boxes on images.
+- **Inputs:** PNG, JPEG, text files (`.txt`, `.md`, `.json`, `.csv`, `.env`, `.log`, `.yaml`), and documents (`.pdf`, `.docx`, `.xlsx`, `.pptx`). Encrypted and macro-enabled documents, legacy `.doc`/`.xls`/`.ppt`, and ODF files are not supported. Other types are listed as "not supported" in coverage, never skipped silently. Flat file list only.
+- **Detection layers:** rules (secrets, PII, protected terms), offline OCR with word boxes, structure checks (metadata, trailing data after PNG `IEND` / JPEG `EOI`, zero-width characters, instruction-like text, and hidden document content such as comments, tracked changes, hidden sheets, annotations, and attachments), LLM text analysis with quote matching, and vision analysis of screenshot UI regions. Manual boxes on images and PDF pages, and manual text selection in Office documents.
 - **Modes:** Full, Text AI, Rules only, chosen by what is reachable. If the model stops, the scan switches to Rules only and the UI shows it.
 - **Locality:** Local, LAN, Remote, or Mock. A remote endpoint needs the user's confirmation per package.
 - **Decisions:** redact, keep, keep and remember (allow rule on the recipient), not an issue (one package only, never remembered), and exclude file. A secret never becomes an allow rule.
-- **Export:** originals stay read-only. Export rebuilds images from decoded pixels and writes text files new, applies solid-fill redactions, strips metadata, then verifies.
+- **Export:** originals stay read-only. Export rebuilds images from decoded pixels and writes text files new, applies solid-fill redactions, strips metadata, then verifies. Documents are rewritten in the same format with the redacted content removed from the file itself. A PDF page whose redaction cannot be verified is flattened to an image, and an Office object that cannot be rendered locally is removed; coverage names each one.
 - **Network:** the built app makes no network calls except to `127.0.0.1` and the configured model server. It loads no remote fonts or scripts at runtime.
-- **Out of scope:** PDF redaction, Office files, archives, email files, recursive folder import, desktop shells, accounts, cloud sync, telemetry, mobile apps, model training.
+- **Out of scope:** legacy binary Office and ODF files, archives, email files, recursive folder import, desktop shells, accounts, cloud sync, telemetry, mobile apps, model training.
 - **Undecided:** the final demo model (Gemma 4 E4B for text and vision, or Qwen3 4B for text with OCR only) depends on spike F1.
 
 ## Brand Commitments
