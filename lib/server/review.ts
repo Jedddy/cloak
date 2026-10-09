@@ -4,6 +4,7 @@ import { ApiError } from "@/lib/contract/errors";
 import type { Layers, RelatedSource } from "@/lib/contract/interfaces";
 import type {
   AllowRule,
+  DocumentModel,
   Detection,
   FileEntry,
   Finding,
@@ -23,6 +24,7 @@ import { ocrText, recipientContext } from "./pipeline";
 import { readEffectiveSettings } from "./settings";
 import {
   readCoverage,
+  readDocument,
   readFindings,
   readOcr,
   readOriginal,
@@ -141,20 +143,49 @@ function manualDetection(box: Detection["evidence"][number] & { type: "image-reg
   return { method: "manual", ruleId: null, evidence: [box] };
 }
 
+async function cachedModel(packageId: string, fileId: string): Promise<DocumentModel> {
+  const model = await readDocument(packageId, fileId);
+
+  if (model === null) {
+    throw new ApiError("conflict", "Scan the package to see this document.");
+  }
+
+  return model;
+}
+
+/** The anchor to store on a manual box: `page:<n>` inside a PDF's pages for a document, none for an image. */
+async function boxAnchor(pkg: Package, file: FileEntry, anchor: string | null | undefined): Promise<string | undefined> {
+  if (file.kind !== "document") {
+    return undefined;
+  }
+
+  const page = /^page:([1-9]\d*)$/.exec(anchor ?? "");
+
+  if (page === null || Number(page[1]) > (await cachedModel(pkg.id, file.id)).pages.length) {
+    throw new ApiError("bad-request", "Draw the box on a page of the document.");
+  }
+
+  return anchor ?? undefined;
+}
+
 export async function saveRegion(packageId: string, body: RegionBody, layers: Layers): Promise<FindingDecisionResult> {
   const pkg = await readPackage(packageId);
 
-  const { findings, result } = await changeFindings(pkg, (current): FindingsChange<Finding[]> => {
+  const { findings, result } = await changeFindings(pkg, async (current): Promise<FindingsChange<Finding[]>> => {
     if (body.action === "add") {
-      if (findFile(pkg, body.fileId).kind !== "image") {
-        throw new ApiError("bad-request", "Manual regions are for images only.");
+      const file = findFile(pkg, body.fileId);
+
+      if (file.kind !== "image" && file.kind !== "document") {
+        throw new ApiError("bad-request", "Manual regions are for images and documents only.");
       }
+
+      const anchor = await boxAnchor(pkg, file, body.anchor);
 
       const created: Finding = {
         id: `fnd-${randomUUID()}`,
         fileId: body.fileId,
         category: body.category,
-        detections: [manualDetection({ type: "image-region", box: body.box, quote: null })],
+        detections: [manualDetection({ type: "image-region", box: body.box, quote: null, anchor })],
         title: "Manual region",
         reason: "You drew this region.",
         suggestedAction: "redact",
@@ -167,7 +198,33 @@ export async function saveRegion(packageId: string, body: RegionBody, layers: La
     }
 
     if (body.action === "add-span") {
-      throw new ApiError("bad-request", "Text selections are not supported yet.");
+      if (findFile(pkg, body.fileId).kind !== "document") {
+        throw new ApiError("bad-request", "Text selections are only for documents; draw a box on images.");
+      }
+
+      const { text } = await cachedModel(pkg.id, body.fileId);
+
+      if (body.start >= body.end || body.end > text.length) {
+        throw new ApiError("bad-request", "The selection is outside the document text.");
+      }
+
+      const quote = text.slice(body.start, body.end);
+      const line = text.slice(0, body.start).split("\n").length - 1;
+
+      const created: Finding = {
+        id: `fnd-${randomUUID()}`,
+        fileId: body.fileId,
+        category: body.category,
+        detections: [{ method: "manual", ruleId: null, evidence: [{ type: "text-span", start: body.start, end: body.end, line, quote }] }],
+        title: "Manual selection",
+        reason: "You selected this text.",
+        suggestedAction: "redact",
+        allowedByRecipient: false,
+        decision: "open",
+        relatedGroupId: null,
+      };
+
+      return { findings: [...current, created], result: [created] };
     }
 
     const target = current.find((finding) => finding.id === body.findingId);
@@ -189,9 +246,11 @@ export async function saveRegion(packageId: string, body: RegionBody, layers: La
       return { findings: current.map((finding) => (finding.id === target.id ? cleared : finding)), result: [cleared] };
     }
 
+    const anchor = await boxAnchor(pkg, findFile(pkg, target.fileId), body.anchor);
+
     const moved: Finding = {
       ...target,
-      detections: [...layerDetections, manualDetection({ type: "image-region", box: body.box, quote: null })],
+      detections: [...layerDetections, manualDetection({ type: "image-region", box: body.box, quote: null, anchor })],
     };
 
     return { findings: current.map((finding) => (finding.id === target.id ? moved : finding)), result: [moved] };

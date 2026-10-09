@@ -532,6 +532,28 @@ export async function writeDocument(packageId: string, fileId: string, model: Do
   await writeJsonAtomic(workspacePaths.document(packageId, fileId), DocumentModelSchema.parse(model));
 }
 
+/** The cached PNG render of a PDF page (1-based), or null. */
+export async function readPageRender(packageId: string, fileId: string, page: number): Promise<Uint8Array | null> {
+  try {
+    return new Uint8Array(await readFile(workspacePaths.pageRender(packageId, fileId, page)));
+  } catch (error) {
+    if (error instanceof Error && isMissing(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function writePageRender(packageId: string, fileId: string, page: number, png: Uint8Array): Promise<void> {
+  const path = workspacePaths.pageRender(packageId, fileId, page);
+  const temp = `${path}.${randomUUID()}.tmp`;
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(temp, png);
+  await rename(temp, path);
+}
+
 export async function deleteVerification(packageId: string): Promise<void> {
   await rm(workspacePaths.verification(packageId), { force: true });
 }
