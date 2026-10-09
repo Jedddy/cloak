@@ -1,0 +1,431 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-09T09:27:31.866Z",
+  "title": "Design System: SentinelDesk",
+  "extensions": {
+    "colorMeta": {
+      "pine": {
+        "role": "primary",
+        "displayName": "Deep Pine",
+        "canonical": "oklch(0.46 0.07 175)",
+        "dark": "oklch(0.72 0.08 175)",
+        "tonalRamp": [
+          "oklch(0.15 0.07 175)",
+          "oklch(0.26 0.07 175)",
+          "oklch(0.37 0.07 175)",
+          "oklch(0.48 0.07 175)",
+          "oklch(0.6 0.07 175)",
+          "oklch(0.72 0.07 175)",
+          "oklch(0.84 0.07 175)",
+          "oklch(0.95 0.07 175)"
+        ]
+      },
+      "pine-foreground": {
+        "role": "primary",
+        "displayName": "Pine Foreground",
+        "canonical": "oklch(0.985 0.005 175)",
+        "dark": "oklch(0.17 0.02 175)",
+        "tonalRamp": [
+          "oklch(0.15 0.02 175)",
+          "oklch(0.26 0.02 175)",
+          "oklch(0.37 0.02 175)",
+          "oklch(0.48 0.02 175)",
+          "oklch(0.6 0.02 175)",
+          "oklch(0.72 0.02 175)",
+          "oklch(0.84 0.02 175)",
+          "oklch(0.95 0.02 175)"
+        ]
+      },
+      "pine-selection": {
+        "role": "primary",
+        "displayName": "Pine Selection",
+        "canonical": "oklch(0.94 0.025 175)",
+        "dark": "oklch(0.3 0.04 175)",
+        "tonalRamp": [
+          "oklch(0.15 0.03 175)",
+          "oklch(0.26 0.03 175)",
+          "oklch(0.37 0.03 175)",
+          "oklch(0.48 0.03 175)",
+          "oklch(0.6 0.03 175)",
+          "oklch(0.72 0.03 175)",
+          "oklch(0.84 0.03 175)",
+          "oklch(0.95 0.03 175)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "canonical": "oklch(0.985 0.003 250)",
+        "dark": "oklch(0.17 0.008 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.006 250)",
+          "oklch(0.26 0.006 250)",
+          "oklch(0.37 0.006 250)",
+          "oklch(0.48 0.006 250)",
+          "oklch(0.6 0.006 250)",
+          "oklch(0.72 0.006 250)",
+          "oklch(0.84 0.006 250)",
+          "oklch(0.95 0.006 250)"
+        ]
+      },
+      "sheet": {
+        "role": "neutral",
+        "displayName": "Sheet",
+        "canonical": "oklch(1 0 0)",
+        "dark": "oklch(0.205 0.009 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.006 250)",
+          "oklch(0.26 0.006 250)",
+          "oklch(0.37 0.006 250)",
+          "oklch(0.48 0.006 250)",
+          "oklch(0.6 0.006 250)",
+          "oklch(0.72 0.006 250)",
+          "oklch(0.84 0.006 250)",
+          "oklch(0.95 0.006 250)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "canonical": "oklch(0.963 0.005 250)",
+        "dark": "oklch(0.235 0.01 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.008 250)",
+          "oklch(0.26 0.008 250)",
+          "oklch(0.37 0.008 250)",
+          "oklch(0.48 0.008 250)",
+          "oklch(0.6 0.008 250)",
+          "oklch(0.72 0.008 250)",
+          "oklch(0.84 0.008 250)",
+          "oklch(0.95 0.008 250)"
+        ]
+      },
+      "hover-slate": {
+        "role": "neutral",
+        "displayName": "Hover Slate",
+        "canonical": "oklch(0.945 0.007 250)",
+        "dark": "oklch(0.27 0.012 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.009 250)",
+          "oklch(0.26 0.009 250)",
+          "oklch(0.37 0.009 250)",
+          "oklch(0.48 0.009 250)",
+          "oklch(0.6 0.009 250)",
+          "oklch(0.72 0.009 250)",
+          "oklch(0.84 0.009 250)",
+          "oklch(0.95 0.009 250)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.22 0.015 255)",
+        "dark": "oklch(0.95 0.004 250)",
+        "tonalRamp": [
+          "oklch(0.15 0.015 255)",
+          "oklch(0.26 0.015 255)",
+          "oklch(0.37 0.015 255)",
+          "oklch(0.48 0.015 255)",
+          "oklch(0.6 0.015 255)",
+          "oklch(0.72 0.015 255)",
+          "oklch(0.84 0.015 255)",
+          "oklch(0.95 0.015 255)"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(0.5 0.016 255)",
+        "dark": "oklch(0.7 0.014 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.016 255)",
+          "oklch(0.26 0.016 255)",
+          "oklch(0.37 0.016 255)",
+          "oklch(0.48 0.016 255)",
+          "oklch(0.6 0.016 255)",
+          "oklch(0.72 0.016 255)",
+          "oklch(0.84 0.016 255)",
+          "oklch(0.95 0.016 255)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "oklch(0.905 0.008 250)",
+        "dark": "oklch(0.29 0.01 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.009 250)",
+          "oklch(0.26 0.009 250)",
+          "oklch(0.37 0.009 250)",
+          "oklch(0.48 0.009 250)",
+          "oklch(0.6 0.009 250)",
+          "oklch(0.72 0.009 250)",
+          "oklch(0.84 0.009 250)",
+          "oklch(0.95 0.009 250)"
+        ]
+      },
+      "field-edge": {
+        "role": "neutral",
+        "displayName": "Field Edge",
+        "canonical": "oklch(0.65 0.012 250)",
+        "dark": "oklch(0.51 0.012 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.012 250)",
+          "oklch(0.26 0.012 250)",
+          "oklch(0.37 0.012 250)",
+          "oklch(0.48 0.012 250)",
+          "oklch(0.6 0.012 250)",
+          "oklch(0.72 0.012 250)",
+          "oklch(0.84 0.012 250)",
+          "oklch(0.95 0.012 250)"
+        ]
+      },
+      "brick": {
+        "role": "status",
+        "displayName": "Brick",
+        "canonical": "oklch(0.53 0.17 28)",
+        "dark": "oklch(0.68 0.15 25)",
+        "tonalRamp": [
+          "oklch(0.15 0.13 28)",
+          "oklch(0.26 0.13 28)",
+          "oklch(0.37 0.13 28)",
+          "oklch(0.48 0.13 28)",
+          "oklch(0.6 0.13 28)",
+          "oklch(0.72 0.13 28)",
+          "oklch(0.84 0.13 28)",
+          "oklch(0.95 0.13 28)"
+        ]
+      },
+      "ochre": {
+        "role": "status",
+        "displayName": "Ochre",
+        "canonical": "oklch(0.52 0.11 70)",
+        "dark": "oklch(0.78 0.11 80)",
+        "tonalRamp": [
+          "oklch(0.15 0.1 72)",
+          "oklch(0.26 0.1 72)",
+          "oklch(0.37 0.1 72)",
+          "oklch(0.48 0.1 72)",
+          "oklch(0.6 0.1 72)",
+          "oklch(0.72 0.1 72)",
+          "oklch(0.84 0.1 72)",
+          "oklch(0.95 0.1 72)"
+        ]
+      },
+      "ochre-wash": {
+        "role": "status",
+        "displayName": "Ochre Wash",
+        "canonical": "oklch(0.96 0.035 85)",
+        "dark": "oklch(0.3 0.05 75)",
+        "tonalRamp": [
+          "oklch(0.15 0.05 82)",
+          "oklch(0.26 0.05 82)",
+          "oklch(0.37 0.05 82)",
+          "oklch(0.48 0.05 82)",
+          "oklch(0.6 0.05 82)",
+          "oklch(0.72 0.05 82)",
+          "oklch(0.84 0.05 82)",
+          "oklch(0.95 0.05 82)"
+        ]
+      },
+      "highlighter": {
+        "role": "status",
+        "displayName": "Highlighter",
+        "canonical": "oklch(0.93 0.075 95)",
+        "dark": "oklch(0.42 0.075 90)",
+        "tonalRamp": [
+          "oklch(0.15 0.075 93)",
+          "oklch(0.26 0.075 93)",
+          "oklch(0.37 0.075 93)",
+          "oklch(0.48 0.075 93)",
+          "oklch(0.6 0.075 93)",
+          "oklch(0.72 0.075 93)",
+          "oklch(0.84 0.075 93)",
+          "oklch(0.95 0.075 93)"
+        ]
+      },
+      "redaction": {
+        "role": "status",
+        "displayName": "Redaction",
+        "canonical": "oklch(0.16 0.01 255)",
+        "dark": "oklch(0.04 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0.008 255)",
+          "oklch(0.26 0.008 255)",
+          "oklch(0.37 0.008 255)",
+          "oklch(0.48 0.008 255)",
+          "oklch(0.6 0.008 255)",
+          "oklch(0.72 0.008 255)",
+          "oklch(0.84 0.008 255)",
+          "oklch(0.95 0.008 255)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page title only, for example the package name. One per screen."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headings in the Settings and Export screens."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel titles and the title of the selected finding."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default UI text, list rows, finding reasons. Prose at 65-75ch."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field labels, column headers, badge text, file metadata. Sentence case."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Evidence quotes, paths, hashes, offsets, model names. Ligatures off."
+      }
+    },
+    "shadows": [
+      {
+        "name": "popover",
+        "value": "0 4px 16px -4px oklch(0.22 0.015 255 / 0.12)",
+        "purpose": "Open popovers, menus, and dragged items only, with a 1px Rule border. Surfaces at rest are flat."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state",
+        "value": "150ms-250ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "State changes only (selection, open/close, decision applied). Instant under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main action in an area, for example Scan package.",
+      "html": "<button class=\"ds-btn ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m21 21-4.3-4.3\"/></svg>Scan package</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:0.375rem;font:500 0.875rem/1 var(--font-sans,Inter,system-ui,sans-serif);cursor:pointer;transition:background-color 150ms,box-shadow 150ms,transform 150ms;outline:none;background:transparent;color:var(--foreground,oklch(0.22 0.015 255))}.ds-btn:active{transform:translateY(1px)}.ds-btn:focus-visible{border-color:var(--ring,oklch(0.46 0.07 175));box-shadow:0 0 0 3px color-mix(in oklch,var(--ring,oklch(0.46 0.07 175)) 50%,transparent)}.ds-btn-primary{background:var(--primary,oklch(0.46 0.07 175));color:var(--primary-foreground,oklch(0.985 0.005 175))}.ds-btn-primary:hover{background:color-mix(in oklch,var(--primary,oklch(0.46 0.07 175)) 80%,transparent)}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary decisions such as Keep or Not an issue.",
+      "html": "<button class=\"ds-btn ds-btn-outline\">Keep</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:0.375rem;font:500 0.875rem/1 var(--font-sans,Inter,system-ui,sans-serif);cursor:pointer;transition:background-color 150ms,box-shadow 150ms,transform 150ms;outline:none;background:transparent;color:var(--foreground,oklch(0.22 0.015 255))}.ds-btn:active{transform:translateY(1px)}.ds-btn:focus-visible{border-color:var(--ring,oklch(0.46 0.07 175));box-shadow:0 0 0 3px color-mix(in oklch,var(--ring,oklch(0.46 0.07 175)) 50%,transparent)}.ds-btn-outline{background:var(--background,oklch(0.985 0.003 250));border-color:var(--border,oklch(0.905 0.008 250))}.ds-btn-outline:hover{background:var(--muted,oklch(0.963 0.005 250))}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Toolbar and row actions.",
+      "html": "<button class=\"ds-btn ds-btn-ghost\">Previous finding</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:0.375rem;font:500 0.875rem/1 var(--font-sans,Inter,system-ui,sans-serif);cursor:pointer;transition:background-color 150ms,box-shadow 150ms,transform 150ms;outline:none;background:transparent;color:var(--foreground,oklch(0.22 0.015 255))}.ds-btn:active{transform:translateY(1px)}.ds-btn:focus-visible{border-color:var(--ring,oklch(0.46 0.07 175));box-shadow:0 0 0 3px color-mix(in oklch,var(--ring,oklch(0.46 0.07 175)) 50%,transparent)}.ds-btn-ghost:hover{background:var(--muted,oklch(0.963 0.005 250))}"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Removing a file or discarding decisions. A tint, never a solid red block.",
+      "html": "<button class=\"ds-btn ds-btn-destructive\">Remove file</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:0.375rem;font:500 0.875rem/1 var(--font-sans,Inter,system-ui,sans-serif);cursor:pointer;transition:background-color 150ms,box-shadow 150ms,transform 150ms;outline:none;background:transparent;color:var(--foreground,oklch(0.22 0.015 255))}.ds-btn:active{transform:translateY(1px)}.ds-btn:focus-visible{border-color:var(--ring,oklch(0.46 0.07 175));box-shadow:0 0 0 3px color-mix(in oklch,var(--ring,oklch(0.46 0.07 175)) 50%,transparent)}.ds-btn-destructive{background:color-mix(in oklch,var(--destructive,oklch(0.53 0.17 28)) 10%,transparent);color:var(--destructive,oklch(0.53 0.17 28))}.ds-btn-destructive:hover{background:color-mix(in oklch,var(--destructive,oklch(0.53 0.17 28)) 20%,transparent)}"
+    },
+    {
+      "name": "Text Input (reference)",
+      "kind": "input",
+      "description": "Made from the tokens. No input component is in the code yet. The Field Edge border meets 3:1.",
+      "html": "<input class=\"ds-input\" placeholder=\"Recipient name\">",
+      "css": ".ds-input{height:32px;padding:0 10px;border:1px solid var(--input,oklch(0.65 0.012 250));border-radius:0.375rem;background:var(--card,#fff);color:var(--foreground,oklch(0.22 0.015 255));font:400 0.875rem/1.5 var(--font-sans,Inter,system-ui,sans-serif);outline:none;transition:box-shadow 150ms,border-color 150ms}.ds-input::placeholder{color:var(--muted-foreground,oklch(0.5 0.016 255))}.ds-input:focus-visible{border-color:var(--ring,oklch(0.46 0.07 175));box-shadow:0 0 0 3px color-mix(in oklch,var(--ring,oklch(0.46 0.07 175)) 50%,transparent)}"
+    },
+    {
+      "name": "Evidence Quote (reference)",
+      "kind": "custom",
+      "description": "Made from the tokens. Shows a highlighted evidence span and a solid redaction in mono text.",
+      "html": "<p class=\"ds-quote\">Invoice for <mark class=\"ds-hl\">Northwind Traders</mark>, card ending <span class=\"ds-redact\">4242</span></p>",
+      "css": ".ds-quote{margin:0;padding:8px 12px;font:400 0.8125rem/1.5 var(--font-mono,'JetBrains Mono',ui-monospace,monospace);font-variant-ligatures:none;color:var(--foreground,oklch(0.22 0.015 255));background:var(--card,#fff);border:1px solid var(--border,oklch(0.905 0.008 250));border-radius:0.375rem}.ds-hl{background:var(--highlight,oklch(0.93 0.075 95));color:inherit;padding:0 1px}.ds-redact{background:var(--redaction,oklch(0.16 0.01 255));color:transparent}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Desk",
+    "overview": "SentinelDesk is a calm, exact, discreet workbench for a tense moment: the user is about to share a folder outside the organization. The system takes its familiarity from Notion, Figma, and Stripe Dashboard: dense but legible lists, consistent panels, data presented so that it can be trusted. Cool slate neutrals carry almost every pixel. One deep pine accent marks what the user can act on and what is selected. Evidence (highlighted quotes, solid redaction blocks, mono paths) is the most visible material on the screen, not the chrome around it.\n\nThe tool follows the system light or dark setting. Light is the reference theme for daytime desk work; dark is a full, tuned token set, not an inversion. Motion conveys state only. The tool disappears into the review task so the user can send with confidence.\n\nThe system rejects SaaS marketing tropes and neon security-ops decor: no gradient heroes, no metric tiles, no glowing alarms, no red-alarm panels.",
+    "keyCharacteristics": [
+      "Product density over decoration: 14px body text, 32px controls, 6px corners",
+      "Evidence-first hierarchy: what, where, why, how detected",
+      "Slate neutrals with one pine accent on 10% or less of any screen",
+      "Flat surfaces; depth from tonal layers",
+      "State-driven motion only, 150–250 ms"
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "Pine is used for primary actions, selection, focus, and the reviewed state only. It covers 10% or less of any screen. Its rarity is the point.",
+        "section": "colors"
+      },
+      {
+        "name": "The No Alarm Rule",
+        "body": "No status color fills a panel, a banner, or a full row. Status is a small icon, a text color, or a pale wash behind one line.",
+        "section": "colors"
+      },
+      {
+        "name": "The Solid Fill Rule",
+        "body": "A redaction is a solid block of the Redaction color with the exact bounds of the evidence. What the user sees is what the export burns in.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Family Rule",
+        "body": "Inter carries all UI text. No display serif and no second sans. Contrast comes from weight and size steps, not from a font change.",
+        "section": "typography"
+      },
+      {
+        "name": "The Mono Means Data Rule",
+        "body": "JetBrains Mono is used only for text that the user must compare exactly: quotes, paths, hashes, offsets, model identifiers. It is never used as decoration to look \"technical.\"",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "No uppercase tracked labels and no kicker above a heading. The heading carries its own weight.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat at Rest Rule",
+        "body": "Surfaces at rest have no shadow. If two areas need separation, change the tone or add a 1px Rule.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use the shadcn tokens (`bg-primary`, `bg-muted`, `text-muted-foreground`, `border-input`) and the SentinelDesk additions (`bg-selection`, `bg-highlight`, `bg-redaction`, `text-warning`, `bg-warning-muted`) instead of raw color values.",
+      "Do keep Pine on 10% or less of any screen: primary actions, selection, focus, and the reviewed state.",
+      "Do give every interactive component all states: default, hover, focus, active, disabled, loading, error.",
+      "Do pair every image-region finding with a text equivalent, and keep prose at 65–75ch.",
+      "Do show where the model runs (local, LAN, remote) with text and an icon; mark remote with Ochre.",
+      "Do keep transitions at 150–250 ms and for state only; reduced motion makes them instant."
+    ],
+    "donts": [
+      "Don't build SaaS marketing patterns: gradient heroes, hero-metric tiles, identical icon-card grids.",
+      "Don't use uppercase tracked kickers above sections or numbered 01/02/03 section markers.",
+      "Don't use side-stripe borders thicker than 1px, gradient text, or decorative glass and blur.",
+      "Don't use scores, progress rings, or \"safe\"/\"clean\" language. The only success copy is \"Reviewed. No open detected findings.\"",
+      "Don't let a file that was not processed, or processed without AI, look the same as a reviewed file. Mark it with Ochre and a reason.",
+      "Don't draw redactions as outlines, stripes, or blur. A redaction is a solid Redaction block."
+    ]
+  }
+}
