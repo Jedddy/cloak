@@ -41,3 +41,8 @@ non-React widget).
   data library.
 - One-time app init: use a module-level guard, not `useEffect(..., [])`.
 - This repository uses oxlint and oxfmt instead of eslint and prettier.
+
+# Design Context
+
+- Register is `product`. Read `PRODUCT.md` and `DESIGN.md` before any UI work.
+- DESIGN.md is a seed. Re-run `/impeccable document` once real UI lands to capture tokens.
