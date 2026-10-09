@@ -248,11 +248,14 @@ export async function contentType(pkg: Pkg, part: string): Promise<string | null
 /** A text node (or whole cell) of an item. */
 export type Piece = { text: string; part: string; node: number; cell?: string };
 
-/** Reads the pieces of text nodes under any element of `root`, numbered by their index among all `names` nodes of `root`. */
-export function pieceReader(root: Document | Element, names: string[], part: string): (scope: Document | Element) => Piece[] {
+/**
+ * Reads the pieces of text nodes under any element of `root`, numbered by their index among all `names` nodes of `root`.
+ * `read` narrows which of those nodes make pieces (default all), for parts whose other nodes are read apart.
+ */
+export function pieceReader(root: Document | Element, names: string[], part: string, read: string[] = names): (scope: Document | Element) => Piece[] {
   const index = new Map(textNodes(root, names).map((node, at) => [node, at]));
 
-  return (scope) => textNodes(scope, names).map((node) => ({ text: node.textContent ?? "", part, node: index.get(node) ?? -1 }));
+  return (scope) => textNodes(scope, read).map((node) => ({ text: node.textContent ?? "", part, node: index.get(node) ?? -1 }));
 }
 
 export type ModelBuilder = {
@@ -425,7 +428,7 @@ async function inventory(pkg: Pkg, builder: ModelBuilder): Promise<void> {
   }
 }
 
-function hostOf(target: string): string {
+export function hostOf(target: string): string {
   try {
     return new URL(target).host;
   } catch {

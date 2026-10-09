@@ -1,4 +1,4 @@
-import type { Element } from "@xmldom/xmldom";
+import type { Document, Element } from "@xmldom/xmldom";
 
 import type { DocumentSection } from "@/lib/contract/schemas";
 import { columnName, columnNumber } from "@/lib/utils";
@@ -10,9 +10,11 @@ import {
   pieceReader,
   relationships,
   requiredXml,
+  textNodes,
   type ModelBuilder,
   type Pkg,
   type Piece,
+  type Relationship,
 } from "./ooxml";
 import { shortHash } from "./shared";
 
@@ -24,6 +26,61 @@ export const truthy = new Set(["1", "true"]);
 
 /** Text node names of a comment part: threaded comments use `text`, legacy ones `t`. */
 export const xlsxCommentNames = (threaded: boolean) => (threaded ? ["text"] : ["t"]);
+
+/** Text node names of the workbook part: each defined name is one node, with its name attribute and formula text. */
+export const xlsxWorkbookNames = ["definedName"];
+
+/** Hidden item id of a defined name; scoped names carry their sheet index. */
+export function definedNameId(name: Element): string {
+  const local = attr(name, "localSheetId");
+
+  return `name-${local === null ? "" : `${local}:`}${attr(name, "name") ?? ""}`;
+}
+
+/** Built-in names such as Print_Area are text for detection but not hidden items. */
+export const isBuiltInName = (name: string) => name.startsWith("_xlnm.");
+
+export type PivotCache = {
+  part: string;
+  /** Hidden item id. */
+  id: string;
+  /** Relationship id and cache id in workbook.xml ("" when the workbook does not list it). */
+  rid: string;
+  cacheId: string;
+  /** Sheets named by the cache source (worksheet source or consolidation ranges). */
+  sheets: string[];
+  /** Defined name or table the cache reads from. */
+  name: string | null;
+  /** What the cache reads from, for the note. */
+  source: string;
+};
+
+/** Pivot cache definitions of the package, with what they read from; shared with the redactor so ids agree. */
+export async function pivotCaches(pkg: Pkg, workbook: Document, workbookRels: Relationship[]): Promise<PivotCache[]> {
+  const out: PivotCache[] = [];
+
+  for (const part of pkg.names.filter((entry) => /^xl\/pivotCache\/pivotCacheDefinition\d*\.xml$/.test(entry))) {
+    const definition = await pkg.xml(part);
+    const rid = workbookRels.find((rel) => rel.target === part)?.id ?? "";
+    const listed = descendants(workbook, "pivotCache").find((entry) => rid !== "" && attr(entry, "r:id") === rid);
+    const origin = definition ? descendants(definition, "cacheSource")[0] : undefined;
+    const sources = origin ? descendants(origin, "worksheetSource").concat(descendants(origin, "rangeSet")) : [];
+    const sheets = sources.flatMap((entry) => attr(entry, "sheet") ?? []);
+    const name = sources.map((entry) => attr(entry, "name")).find((value) => value !== null) ?? null;
+
+    out.push({
+      part,
+      id: `pivot-${part}`,
+      rid,
+      cacheId: listed ? (attr(listed, "cacheId") ?? "") : "",
+      sheets,
+      name,
+      source: sheets[0] ?? name ?? (origin ? attr(origin, "type") : null) ?? "an unknown source",
+    });
+  }
+
+  return out;
+}
 
 /** Text of a shared string item or inline string: its `t`, or the `t` of each run. */
 function richText(element: Element): string {
@@ -203,7 +260,40 @@ export async function extractXlsx(pkg: Pkg, builder: ModelBuilder): Promise<void
     }
   }
 
-  for (const name of pkg.names.filter((entry) => /^xl\/pivotCache\/pivotCacheDefinition\d*\.xml$/.test(entry))) {
-    builder.model.notAnalysed.push({ label: `Pivot cache ${name}`, reason: "Pivot cache: not analysed" });
+  // Defined names: their text goes to detection, and each non-built-in one is a hidden item.
+  const names = descendants(workbook, "definedName");
+  const nameIndex = new Map(textNodes(workbook, xlsxWorkbookNames).map((node, at) => [node, at]));
+  const nameSection = builder.section("Defined names", "flow");
+
+  for (const element of names) {
+    const name = attr(element, "name") ?? "";
+    const formula = rewrite(element.textContent ?? "");
+    const node = nameIndex.get(element) ?? -1;
+
+    builder.item(
+      nameSection,
+      `Defined name ${name}`,
+      null,
+      null,
+      [
+        { text: name, part: "xl/workbook.xml", node },
+        { text: formula, part: "xl/workbook.xml", node },
+      ],
+      " = ",
+    );
+
+    if (!isBuiltInName(name)) {
+      builder.hide({
+        id: definedNameId(element),
+        kind: "defined-name",
+        note: `Defined name '${name}' = ${formula}`,
+        quote: name,
+        category: "hidden-data",
+      });
+    }
+  }
+
+  for (const cache of await pivotCaches(pkg, workbook, workbookRels)) {
+    builder.hide({ id: cache.id, kind: "pivot-cache", note: `Pivot cache from ${cache.source}`, quote: cache.sheets[0] ?? null, category: "hidden-data" });
   }
 }

@@ -368,6 +368,8 @@ export const HiddenItemSchema = z.object({
     "hidden-layer",
     "external-link",
     "off-page-text",
+    "defined-name",
+    "pivot-cache",
   ]),
   note: z.string(),
   /** Identifying text used as a residue needle. */

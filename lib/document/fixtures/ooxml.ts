@@ -125,6 +125,14 @@ export type DocxOptions = {
   insertions?: { id: number; author: string; text: string }[];
   deletions?: { id: number; author: string; text: string }[];
   comments?: { id: number; author: string; text: string }[];
+  /** Runs with a tracked formatting change (w:rPrChange). */
+  formatChanges?: { id: number; author: string; text: string }[];
+  /** Tracked moves: the `from` text is a w:moveFrom, the `to` text a w:moveTo, each with range markers. */
+  moves?: { id: number; author: string; from: string; to: string }[];
+  /** Complex fields (fldChar); the instruction is split over two w:instrText nodes when `split` is set. */
+  fields?: { instr: string; result: string; split?: boolean }[];
+  /** Simple fields (w:fldSimple). */
+  simpleFields?: { instr: string; result: string }[];
   /** Runs with w:vanish. */
   vanishRun?: string;
   /** Runs coloured FFFFFF. */
@@ -186,6 +194,41 @@ export async function buildDocx(options: DocxOptions = {}): Promise<Uint8Array> 
     body.push(
       `<w:p><w:commentRangeStart w:id="${comment.id}"/>${run("Commented text")}<w:commentRangeEnd w:id="${comment.id}"/>${reference}</w:p>`,
     );
+  }
+
+  for (const change of options.formatChanges ?? []) {
+    const attrs = `w:id="${change.id}" w:author="${esc(change.author)}" w:date="2026-01-02T03:04:05Z"`;
+
+    body.push(`<w:p>${run(change.text, `<w:b/><w:rPrChange ${attrs}><w:rPr/></w:rPrChange>`)}</w:p>`);
+  }
+
+  for (const move of options.moves ?? []) {
+    const attrs = `w:author="${esc(move.author)}" w:date="2026-01-02T03:04:05Z"`;
+    const out = move.id * 10;
+    const into = move.id * 10 + 1;
+
+    body.push(
+      `<w:p><w:moveFromRangeStart w:id="${out}" w:name="move${move.id}" ${attrs}/>` +
+        `<w:moveFrom w:id="${out + 2}" ${attrs}><w:r><w:delText xml:space="preserve">${esc(move.from)}</w:delText></w:r></w:moveFrom>` +
+        `<w:moveFromRangeEnd w:id="${out}"/></w:p>`,
+      `<w:p><w:moveToRangeStart w:id="${into}" w:name="move${move.id}" ${attrs}/>` +
+        `<w:moveTo w:id="${into + 2}" ${attrs}>${run(move.to)}</w:moveTo><w:moveToRangeEnd w:id="${into}"/></w:p>`,
+    );
+  }
+
+  for (const field of options.fields ?? []) {
+    const half = Math.ceil(field.instr.length / 2);
+    const parts = field.split ? [field.instr.slice(0, half), field.instr.slice(half)] : [field.instr];
+    const codes = parts.map((part) => `<w:r><w:instrText xml:space="preserve">${esc(part)}</w:instrText></w:r>`).join("");
+
+    body.push(
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>${codes}<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+        `${run(field.result)}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`,
+    );
+  }
+
+  for (const field of options.simpleFields ?? []) {
+    body.push(`<w:p><w:fldSimple w:instr="${esc(field.instr)}">${run(field.result)}</w:fldSimple></w:p>`);
   }
 
   if (options.vanishRun) {
@@ -318,7 +361,9 @@ export type XlsxOptions = {
   sheets: XlsxSheet[];
   /** Targets of external workbooks, index 1 is the first. */
   externalLinks?: string[];
-  definedNames?: { name: string; ref: string }[];
+  definedNames?: { name: string; ref: string; localSheetId?: number }[];
+  /** Pivot caches: sourced from a sheet (`sheet=`) or a defined name (`name=`), with `secret` in the shared items and records. A pivot table on `table` (a sheet name) uses the cache. */
+  pivotCaches?: { sheet?: string; name?: string; secret: string; table?: string }[];
   author?: string;
   lastModifiedBy?: string;
 };
@@ -458,10 +503,61 @@ export async function buildXlsx(options: XlsxOptions): Promise<Uint8Array> {
 
   const externalTags = links.map((_, index) => `<externalReference r:id="rIdExt${index + 1}"/>`);
   const externalList = externalTags.length > 0 ? `<externalReferences>${externalTags.join("")}</externalReferences>` : "";
-  const names = (options.definedNames ?? []).map((item) => `<definedName name="${esc(item.name)}">${esc(item.ref)}</definedName>`);
+
+  const names = (options.definedNames ?? []).map((item) => {
+    const local = item.localSheetId === undefined ? "" : ` localSheetId="${item.localSheetId}"`;
+
+    return `<definedName name="${esc(item.name)}"${local}>${esc(item.ref)}</definedName>`;
+  });
+
   const namesTag = names.length > 0 ? `<definedNames>${names.join("")}</definedNames>` : "";
 
-  files.set("xl/workbook.xml", `${XML}<workbook ${S} ${NS_R}><sheets>${sheetTags.join("")}</sheets>${externalList}${namesTag}</workbook>`);
+  const caches = options.pivotCaches ?? [];
+
+  caches.forEach((cache, index) => {
+    const n = index + 1;
+    const source = cache.sheet === undefined ? `<worksheetSource name="${esc(cache.name ?? "")}"/>` : `<worksheetSource ref="A1:A2" sheet="${esc(cache.sheet)}"/>`;
+
+    files.set(
+      `xl/pivotCache/pivotCacheDefinition${n}.xml`,
+      `${XML}<pivotCacheDefinition ${S} ${NS_R} r:id="rId1" recordCount="1"><cacheSource type="worksheet">${source}</cacheSource>` +
+        `<cacheFields count="1"><cacheField name="Margin" numFmtId="0"><sharedItems count="1"><s v="${esc(cache.secret)}"/></sharedItems></cacheField></cacheFields></pivotCacheDefinition>`,
+    );
+    files.set(`xl/pivotCache/_rels/pivotCacheDefinition${n}.xml.rels`, relationships([{ id: "rId1", type: `${REL}/pivotCacheRecords`, target: `pivotCacheRecords${n}.xml` }]));
+    files.set(`xl/pivotCache/pivotCacheRecords${n}.xml`, `${XML}<pivotCacheRecords ${S} count="1"><r><x v="0"/></r><r><s v="${esc(cache.secret)}"/></r></pivotCacheRecords>`);
+    overrides.set(`xl/pivotCache/pivotCacheDefinition${n}.xml`, "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml");
+    overrides.set(`xl/pivotCache/pivotCacheRecords${n}.xml`, "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml");
+    workbookRels.push({ id: `rIdPivot${n}`, type: `${REL}/pivotCacheDefinition`, target: `pivotCache/pivotCacheDefinition${n}.xml` });
+
+    if (cache.table !== undefined) {
+      const sheetNumber = options.sheets.findIndex((sheet) => sheet.name === cache.table) + 1;
+
+      files.set(
+        `xl/pivotTables/pivotTable${n}.xml`,
+        `${XML}<pivotTableDefinition ${S} name="PivotTable${n}" cacheId="${n}" dataCaption="Values"><location ref="D1:D2" firstHeaderRow="1" firstDataRow="1" firstDataCol="0"/>` +
+          '<pivotFields count="1"><pivotField axis="axisRow" showAll="0"><items count="2"><item x="0"/><item t="default"/></items></pivotField></pivotFields>' +
+          '<rowFields count="1"><field x="0"/></rowFields><rowItems count="2"><i><x/></i><i t="grand"><x/></i></rowItems></pivotTableDefinition>',
+      );
+      files.set(`xl/pivotTables/_rels/pivotTable${n}.xml.rels`, relationships([{ id: "rId1", type: `${REL}/pivotCacheDefinition`, target: `../pivotCache/pivotCacheDefinition${n}.xml` }]));
+      overrides.set(`xl/pivotTables/pivotTable${n}.xml`, "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml");
+
+      const sheetRelsPart = `xl/worksheets/_rels/sheet${sheetNumber}.xml.rels`;
+      const existing = files.get(sheetRelsPart);
+      // SAFETY: only relationship parts are stored under this path, and they are strings.
+      const before = existing === undefined ? undefined : (existing as string);
+      const entry = `<Relationship Id="rIdPivotTable${n}" Type="${REL}/pivotTable" Target="../pivotTables/pivotTable${n}.xml"/>`;
+
+      files.set(
+        sheetRelsPart,
+        before ? before.replace("</Relationships>", `${entry}</Relationships>`) : relationships([{ id: `rIdPivotTable${n}`, type: `${REL}/pivotTable`, target: `../pivotTables/pivotTable${n}.xml` }]),
+      );
+    }
+  });
+
+  const cacheTags = caches.map((_, index) => `<pivotCache cacheId="${index + 1}" r:id="rIdPivot${index + 1}"/>`);
+  const cacheList = cacheTags.length > 0 ? `<pivotCaches>${cacheTags.join("")}</pivotCaches>` : "";
+
+  files.set("xl/workbook.xml", `${XML}<workbook ${S} ${NS_R}><sheets>${sheetTags.join("")}</sheets>${externalList}${namesTag}${cacheList}</workbook>`);
   files.set("xl/_rels/workbook.xml.rels", relationships(workbookRels));
   files.set("xl/sharedStrings.xml", `${XML}<sst ${S} count="${shared.length}" uniqueCount="${shared.length}">` +
     `${shared.map((text) => `<si><t xml:space="preserve">${esc(text)}</t></si>`).join("")}</sst>`);

@@ -94,4 +94,42 @@ describe("xlsx extraction", () => {
     expect(segment).toMatchObject({ node: 0, cell: null });
     expect(model.sections.map((section) => section.title)).toEqual(["Costs", "Comments: Costs"]);
   });
+
+  test("defined names are text in a Defined names section and one hidden item each", async () => {
+    const model = await extract({
+      sheets: [{ name: "Sheet1", cells: { A1: { text: "x" } } }],
+      definedNames: [
+        { name: "ClientXRate", ref: "Sheet1!$A$1" },
+        { name: "_xlnm.Print_Area", ref: "Sheet1!$A$1:$B$2", localSheetId: 0 },
+      ],
+    });
+
+    const section = model.sections.find((entry) => entry.title === "Defined names");
+    const texts = section?.items.map((item) => model.text.slice(item.start, item.end));
+
+    expect(texts).toEqual(["ClientXRate = Sheet1!$A$1", "_xlnm.Print_Area = Sheet1!$A$1:$B$2"]);
+    expect(model.segments.filter((segment) => segment.part === "xl/workbook.xml")).toHaveLength(4);
+    expect(model.hidden).toEqual([
+      {
+        id: "name-ClientXRate",
+        kind: "defined-name",
+        note: "Defined name 'ClientXRate' = Sheet1!$A$1",
+        quote: "ClientXRate",
+        category: "hidden-data",
+      },
+    ]);
+  });
+
+  test("a pivot cache is a hidden item naming its source, not a not-analysed entry", async () => {
+    const model = await extract({
+      sheets: [{ name: "Margins", cells: { A1: { text: "x" } } }],
+      pivotCaches: [{ sheet: "Margins", secret: "s" }, { name: "SomeTable", secret: "s" }],
+    });
+
+    expect(model.hidden).toEqual([
+      { id: "pivot-xl/pivotCache/pivotCacheDefinition1.xml", kind: "pivot-cache", note: "Pivot cache from Margins", quote: "Margins", category: "hidden-data" },
+      { id: "pivot-xl/pivotCache/pivotCacheDefinition2.xml", kind: "pivot-cache", note: "Pivot cache from SomeTable", quote: null, category: "hidden-data" },
+    ]);
+    expect(model.notAnalysed).toEqual([]);
+  });
 });

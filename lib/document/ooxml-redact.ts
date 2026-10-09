@@ -5,9 +5,9 @@ import type { DocumentRedactionInput, DocumentRedactionResult } from "@/lib/cont
 import { RESIDUE_MIN_NEEDLE, imageAnchor } from "@/lib/contract/schemas";
 import type { Box } from "@/lib/contract/schemas";
 import { redactImage } from "@/lib/redact/image";
-import { columnNumber, normalizeText } from "@/lib/utils";
+import { columnNumber, decodeXmlEntities, normalizeText } from "@/lib/utils";
 
-import { docxParts, docxTextNames, hiddenRunOf } from "./docx";
+import { docxChanges, docxFields, docxParts, docxTextNames, hiddenRunOf } from "./docx";
 import {
   attr,
   children,
@@ -26,7 +26,7 @@ import {
 } from "./ooxml";
 import { pptxCommentNames, pptxTextNames } from "./pptx";
 import { appendTo, shortHash } from "./shared";
-import { truthy, xlsxCommentNames } from "./xlsx";
+import { definedNameId, pivotCaches, truthy, xlsxCommentNames, xlsxWorkbookNames, type PivotCache } from "./xlsx";
 
 // OOXML redaction. Inverts the extractors: segments and hidden item
 // ids are resolved to the same XML nodes, edited in place, and a new zip is
@@ -174,16 +174,12 @@ function textNamesFor(format: DocumentRedactionInput["format"], part: string): s
     return part.startsWith("ppt/comments/") ? pptxCommentNames(part) : pptxTextNames;
   }
 
+  if (part === "xl/workbook.xml") {
+    return xlsxWorkbookNames;
+  }
+
   return xlsxCommentNames(part.includes("threadedComment"));
 }
-
-const entities: [RegExp, string][] = [
-  [/&lt;/g, "<"],
-  [/&gt;/g, ">"],
-  [/&quot;/g, '"'],
-  [/&apos;/g, "'"],
-  [/&amp;/g, "&"],
-];
 
 /** Searchable text variants of a part: XML tag-stripped (joined and spaced), or raw bytes for binary. */
 async function searchable(part: string, bytes: Uint8Array): Promise<string[]> {
@@ -203,7 +199,7 @@ async function searchable(part: string, bytes: Uint8Array): Promise<string[]> {
   }
 
   if (/\.(xml|rels|vml)$/.test(part)) {
-    const xml = entities.reduce((text, [pattern, value]) => text.replace(pattern, value), new TextDecoder().decode(bytes));
+    const xml = decodeXmlEntities(new TextDecoder().decode(bytes));
 
     return [xml.replace(/<[^>]*>/g, ""), xml.replace(/<[^>]*>/g, " ")];
   }
@@ -237,6 +233,8 @@ type Context = {
   deadSheets: Set<string>;
   /** Cell references to blank, by sheet part. */
   redactedCells: Map<string, Set<string>>;
+  /** Defined names (workbook.xml nodes) whose text a span overlaps; they are removed whole. */
+  redactedNames: Set<Element>;
 };
 
 const zipNames = (context: Context) => Object.keys(context.zip.files).filter((name) => !context.zip.files[name].dir);
@@ -345,6 +343,13 @@ async function resolveSpans(context: Context): Promise<Edit[]> {
 
         cells.add(segment.cell ?? "");
         redactedCells.set(segment.part, cells);
+      } else if (format === "xlsx" && segment.part === "xl/workbook.xml") {
+        // A defined name is removed whole: its name and formula cannot take a placeholder and stay valid.
+        const node = (await nodesOf(segment.part))[segment.node];
+
+        if (node) {
+          context.redactedNames.add(node);
+        }
       } else {
         const node = (await nodesOf(segment.part))[segment.node];
 
@@ -400,6 +405,50 @@ async function removeDocxHidden(context: Context): Promise<void> {
       }
 
       touched.add(part);
+    }
+
+    // Fields that link out lose their instruction and keep the displayed result.
+    for (const field of docxFields(document)) {
+      if (field.target === null || !hidden.has(field.id)) {
+        continue;
+      }
+
+      if (field.simple) {
+        unwrap(field.simple);
+      } else {
+        field.nodes.forEach((node) => setText(node, ""));
+      }
+
+      touched.add(part);
+    }
+
+    // Formatting changes keep the current formatting; moved-from text goes, moved-to text stays; markers and cell changes go.
+    const goneMarkers = new Set<string>();
+
+    for (const change of docxChanges(document)) {
+      const name = change.element.localName ?? "";
+
+      if (!hidden.has(change.id) || !change.element.parentNode) {
+        continue;
+      }
+
+      if (name === "moveTo" && !/Pr$/.test(change.element.parentNode.localName ?? "")) {
+        unwrap(change.element);
+      } else {
+        drop(change.element);
+      }
+
+      if (name.endsWith("RangeStart")) {
+        goneMarkers.add(`${name.replace("Start", "End")}-${attr(change.element, "w:id")}`);
+      }
+
+      touched.add(part);
+    }
+
+    for (const end of elementsOf(document)) {
+      if (goneMarkers.has(`${end.localName}-${attr(end, "w:id")}`)) {
+        drop(end);
+      }
     }
 
     for (const comment of descendants(document, "comment")) {
@@ -480,6 +529,35 @@ async function removeExternalLinks(context: Context): Promise<void> {
   }
 }
 
+/** Removes a pivot cache: its workbook entry and relationship, and the pivot tables that read it; the sweep drops the parts. */
+async function removePivotCache(context: Context, workbook: Document, cache: PivotCache): Promise<void> {
+  const { pkg, sheets, deadSheets } = context;
+
+  for (const entry of descendants(workbook, "pivotCache")) {
+    if (cache.rid !== "" && attr(entry, "r:id") === cache.rid) {
+      drop(entry);
+    }
+  }
+
+  await removeRels(context, "xl/workbook.xml", (rel) => rel.target === cache.part);
+
+  for (const sheet of sheets.filter((entry) => !deadSheets.has(entry.part))) {
+    const users = new Set<string>();
+
+    for (const rel of (await relationships(pkg, sheet.part)).filter((entry) => lastSegment(entry.type) === "pivotTable")) {
+      const table = await pkg.xml(rel.target);
+      const sameId = cache.cacheId !== "" && table?.documentElement != null && attr(table.documentElement, "cacheId") === cache.cacheId;
+      const linked = (await relationships(pkg, rel.target)).some((entry) => entry.target === cache.part);
+
+      if (sameId || linked) {
+        users.add(rel.id);
+      }
+    }
+
+    await removeRels(context, sheet.part, (rel) => users.has(rel.id));
+  }
+}
+
 /** Hidden sheets, external workbooks, hidden rows and columns, and comments of an XLSX. */
 async function removeXlsxHidden(context: Context, workbook: Document): Promise<void> {
   const { pkg, hidden, touched, sheets, deadSheets, workbookRels } = context;
@@ -491,6 +569,32 @@ async function removeXlsxHidden(context: Context, workbook: Document): Promise<v
     drop(sheet.element);
     deadSheets.add(sheet.part);
     await removeRels(context, "xl/workbook.xml", (rel) => rel.id === sheet.rid);
+  }
+
+  // Pivot caches: the ones chosen, and the ones that read a removed sheet (directly, or through a defined name or table on it).
+  const goneSheets = new Set(removed.map((sheet) => sheet.name.toLowerCase()));
+
+  const goneNames = new Set(
+    descendants(workbook, "definedName").flatMap((name) => (removed.some((sheet) => mentionsSheet(name.textContent ?? "", sheet.name)) ? [attr(name, "name") ?? ""] : [])),
+  );
+
+  for (const sheet of removed) {
+    for (const rel of (await relationships(pkg, sheet.part)).filter((entry) => lastSegment(entry.type) === "table")) {
+      const table = await pkg.xml(rel.target);
+
+      if (table?.documentElement) {
+        goneNames.add(attr(table.documentElement, "name") ?? "");
+        goneNames.add(attr(table.documentElement, "displayName") ?? "");
+      }
+    }
+  }
+
+  for (const cache of await pivotCaches(pkg, workbook, workbookRels)) {
+    const fromGone = cache.sheets.some((name) => goneSheets.has(name.toLowerCase())) || (cache.name !== null && goneNames.has(cache.name));
+
+    if (fromGone || hidden.has(cache.id)) {
+      await removePivotCache(context, workbook, cache);
+    }
   }
 
   // External workbooks, 1-based in workbook.xml order.
@@ -520,7 +624,13 @@ async function removeXlsxHidden(context: Context, workbook: Document): Promise<v
     const text = name.textContent ?? "";
     const local = attr(name, "localSheetId");
 
-    if (mentionsGone(text) || removed.some((sheet) => mentionsSheet(text, sheet.name) || String(sheet.index) === local)) {
+    if (context.redactedNames.has(name)) {
+      context.notes.push({
+        kind: "formula-dependency",
+        note: `${context.input.fileName}: defined name '${attr(name, "name") ?? ""}' was removed because it contained redacted text; formulas that use it may not calculate.`,
+      });
+      drop(name);
+    } else if (hidden.has(definedNameId(name)) || mentionsGone(text) || removed.some((sheet) => mentionsSheet(text, sheet.name) || String(sheet.index) === local)) {
       drop(name);
     } else {
       if (local !== null) {
@@ -564,6 +674,14 @@ async function removeXlsxHidden(context: Context, workbook: Document): Promise<v
         const column = columnNumber(/^[A-Z]+/.exec(attr(cell, "r") ?? "")?.[0] ?? "");
 
         if ((rowsHidden && rowIsHidden) || (colsHidden && columns.some(([min, max]) => column >= min && column <= max))) {
+          // A dropped cell that held something counts like a redacted one, so formulas that read it are flagged.
+          if (children(cell, "f").length > 0 || children(cell, "v").length > 0 || children(cell, "is").length > 0) {
+            const refs = context.redactedCells.get(sheet.part) ?? new Set<string>();
+
+            refs.add(attr(cell, "r") ?? "");
+            context.redactedCells.set(sheet.part, refs);
+          }
+
           drop(cell);
         }
       }
@@ -617,16 +735,22 @@ function applyTextEdits(context: Context, edits: Edit[]): void {
   }
 
   for (const [node, list] of byNode) {
-    let text = node.textContent ?? "";
+    const simple = node.nodeName === "w:fldSimple";
+    let text = simple ? (attr(node, "w:instr") ?? "") : (node.textContent ?? "");
 
     for (const entry of list.sort((a, b) => b.from - a.from)) {
       text = text.slice(0, entry.from) + (entry.placeholder ? PLACEHOLDER : "") + text.slice(entry.to);
     }
 
-    setText(node, text);
+    if (simple) {
+      node.setAttribute("w:instr", text);
+    } else {
+      setText(node, text);
+    }
+
     context.touched.add(list[0].part);
 
-    if (node.nodeName.startsWith("w:")) {
+    if (node.nodeName.startsWith("w:") && !simple) {
       node.setAttribute("xml:space", "preserve");
     }
   }
@@ -971,6 +1095,7 @@ export async function redactOoxml(input: DocumentRedactionInput): Promise<Docume
     })),
     deadSheets: new Set(),
     redactedCells: new Map(),
+    redactedNames: new Set(),
   };
 
   const edits = await resolveSpans(context);

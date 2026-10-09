@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { mkdir, writeFile } from "node:fs/promises";
+
 import JSZip from "jszip";
 import sharp from "sharp";
 
@@ -125,6 +127,61 @@ describe("docx redaction", () => {
     expect(out.after.text).toContain("A link");
     expect(out.parts.get("word/document.xml")).not.toContain("hyperlink");
     expect(out.after.hidden).toEqual([]);
+  });
+
+  test("removing formatting revisions and moves leaves no author, drops moved-from text and keeps moved-to text", async () => {
+    const bytes = await buildDocx({
+      paragraphs: ["Kept paragraph"],
+      formatChanges: [{ id: 21, author: "J. Cruz", text: "Bold words" }],
+      moves: [{ id: 3, author: "J. Cruz", from: "Moved secret text", to: "Relocated paragraph" }],
+    });
+
+    const out = await run("docx", bytes, { hidden: "all" });
+
+    expect(everywhere(out.parts, "J. Cruz")).toEqual([]);
+    expect(everywhere(out.parts, "Moved secret text")).toEqual([]);
+
+    const document = out.parts.get("word/document.xml") ?? "";
+
+    expect(document).not.toMatch(/PrChange|move(From|To)/);
+    expect(document).toContain("Relocated paragraph");
+    expect(document).toContain("Bold words");
+    expect(document).toContain("<w:b/>");
+    expect(out.after.text).toContain("Relocated paragraph");
+    expect(out.after.hidden).toEqual([]);
+  });
+
+  test("field link items empty the instruction but keep the displayed result", async () => {
+    const bytes = await buildDocx({
+      fields: [{ instr: ' HYPERLINK "https://intranet.clientx.example/wiki" ', result: "Click here", split: true }, { instr: " PAGE ", result: "1" }],
+      simpleFields: [{ instr: 'INCLUDETEXT "clientx-notes.docx"', result: "Included text" }],
+    });
+
+    const out = await run("docx", bytes, { hidden: "all" });
+
+    expect(everywhere(out.parts, "clientx")).toEqual([]);
+    expect(everywhere(out.parts, "HYPERLINK")).toEqual([]);
+
+    const document = out.parts.get("word/document.xml") ?? "";
+
+    expect(document).toContain("Click here");
+    expect(document).toContain("Included text");
+    expect(document).toContain("PAGE");
+    expect(document).not.toContain("fldSimple");
+    expect(out.after.hidden).toEqual([]);
+  });
+
+  test("a span over a field instruction is redacted in its instrText nodes, and in a fldSimple attribute", async () => {
+    const bytes = await buildDocx({
+      fields: [{ instr: " MERGEFIELD AcmeCorpSecret ", result: "Value", split: true }],
+      simpleFields: [{ instr: " MERGEFIELD AcmeCorpOther ", result: "Other value" }],
+    });
+
+    const out = await run("docx", bytes, { spans: ["MERGEFIELD AcmeCorpSecret", "AcmeCorpOther"] });
+
+    expect(everywhere(out.parts, "AcmeCorp")).toEqual([]);
+    expect(out.parts.get("word/document.xml")).toContain("[REDACTED]");
+    expect(out.parts.get("word/document.xml")).toContain("Value");
   });
 
   test("a redacted quote in a chart removes the chart and leaves [Object removed]", async () => {
@@ -257,7 +314,114 @@ describe("xlsx redaction", () => {
     expect(everywhere(out.parts, "Lee")).toEqual([]);
     expect([...out.parts.keys()].filter((name) => /sheet2|comments|vmlDrawing/.test(name))).toEqual([]);
     expect(out.parts.get("xl/workbook.xml")).toContain("Scoped");
-    expect(out.after.text).toBe("Public");
+    expect(out.after.text).toBe("Public\n\nScoped = Pricing!$A$1");
+  });
+
+  test("removing a hidden sheet removes the pivot caches sourced from it, their records and pivot tables, and the output still converts", async () => {
+    const bytes = await buildXlsx({
+      sheets: [
+        { name: "Pricing", cells: { A1: { text: "Public" } } },
+        { name: "Margins", state: "hidden", cells: { A1: { text: "Margin" }, A2: { text: "SecretMarginValue" } } },
+      ],
+      definedNames: [{ name: "MarginData", ref: "Margins!$A$1:$A$2" }],
+      pivotCaches: [
+        { sheet: "Margins", secret: "SecretMarginValue", table: "Pricing" },
+        { name: "MarginData", secret: "SecretMarginValue" },
+        { sheet: "Pricing", secret: "PublicPivotValue", table: "Pricing" },
+      ],
+    });
+
+    const out = await run("xlsx", bytes, { hidden: ["sheet-Margins"] });
+
+    expect(everywhere(out.parts, "SecretMarginValue")).toEqual([]);
+    expect(everywhere(out.parts, "Margins")).toEqual([]);
+    expect([...out.parts.keys()].filter((name) => /pivot/i.test(name)).sort()).toEqual([
+      "xl/pivotCache/_rels/pivotCacheDefinition3.xml.rels",
+      "xl/pivotCache/pivotCacheDefinition3.xml",
+      "xl/pivotCache/pivotCacheRecords3.xml",
+      "xl/pivotTables/_rels/pivotTable3.xml.rels",
+      "xl/pivotTables/pivotTable3.xml",
+    ]);
+    expect(out.parts.get("xl/workbook.xml")).toContain('cacheId="3"');
+    expect(out.parts.get("xl/workbook.xml")).not.toContain('cacheId="1"');
+    expect(out.parts.get("xl/worksheets/_rels/sheet1.xml.rels")).not.toContain("pivotTable1");
+    expect(out.after.text).toContain("Public");
+
+    const directory = "/tmp/claude-0/-home-user-cloak/825218fb-061d-55c2-b6ba-e139655a7d62/scratchpad/pivot-convert";
+
+    await mkdir(directory, { recursive: true });
+    await writeFile(`${directory}/out.xlsx`, out.bytes);
+
+    const converted = Bun.spawnSync(["soffice", "--headless", "--convert-to", "csv", "--outdir", directory, `${directory}/out.xlsx`], { env: { ...process.env, HOME: directory } });
+    const csv = await Bun.file(`${directory}/out.csv`).text();
+
+    expect(converted.exitCode).toBe(0);
+    expect(csv).toContain("Public");
+  }, 60000);
+
+  test("removing hidden rows and columns flags formulas that read the dropped cells", async () => {
+    const bytes = await buildXlsx({
+      sheets: [
+        {
+          name: "S",
+          cells: { A1: { text: "Shown" }, A2: { number: 99 }, B1: { formula: "A2*2", number: 198 }, C1: { number: 5 }, D1: { formula: "C1+1", number: 6 }, E1: { formula: "A1", text: "Shown" } },
+          hiddenRows: [2],
+          hiddenCols: [[3, 3]],
+        },
+      ],
+    });
+
+    const out = await run("xlsx", bytes, { hidden: "all" });
+
+    expect(out.notes.map((note) => note.note).sort()).toEqual([
+      "a.xlsx: S!B1 uses redacted cell S!A2; its formula was not rewritten.",
+      "a.xlsx: S!D1 uses redacted cell S!C1; its formula was not rewritten.",
+    ]);
+    expect(out.notes.every((note) => note.kind === "formula-dependency")).toBe(true);
+  });
+
+  test("defined names that hold redacted text are removed and flagged", async () => {
+    const bytes = await buildXlsx({
+      sheets: [{ name: "S", cells: { A1: { text: "x" } } }],
+      definedNames: [
+        { name: "ClientXRate", ref: "S!$A$1" },
+        { name: "Other", ref: "S!$A$1" },
+      ],
+    });
+
+    const out = await run("xlsx", bytes, { spans: ["ClientXRate"] });
+
+    expect(everywhere(out.parts, "ClientXRate")).toEqual([]);
+    expect(out.parts.get("xl/workbook.xml")).toContain("Other");
+    expect(out.notes).toEqual([
+      { kind: "formula-dependency", note: "a.xlsx: defined name 'ClientXRate' was removed because it contained redacted text; formulas that use it may not calculate." },
+    ]);
+  });
+
+  test("removing a defined name item and a pivot cache item removes just those", async () => {
+    const bytes = await buildXlsx({
+      sheets: [{ name: "S", cells: { A1: { text: "x" } } }],
+      definedNames: [
+        { name: "Keep", ref: "S!$A$1" },
+        { name: "DropMe", ref: "S!$A$1" },
+      ],
+      pivotCaches: [{ sheet: "S", secret: "PivotSecretValue", table: "S" }],
+    });
+
+    const scanned = await extractOoxml({ fileName: "a.xlsx", format: "xlsx", bytes });
+    const ids = scanned.hidden.filter((item) => item.kind === "defined-name" || item.kind === "pivot-cache").map((item) => item.id);
+    const dropName = scanned.hidden.find((item) => item.quote === "DropMe")?.id ?? "";
+    const dropPivot = scanned.hidden.find((item) => item.kind === "pivot-cache")?.id ?? "";
+
+    expect(ids).toHaveLength(3);
+
+    const out = await run("xlsx", bytes, { hidden: [dropName, dropPivot] });
+
+    expect(everywhere(out.parts, "DropMe")).toEqual([]);
+    expect(everywhere(out.parts, "PivotSecretValue")).toEqual([]);
+    expect(out.parts.get("xl/workbook.xml")).toContain("Keep");
+    expect([...out.parts.keys()].filter((name) => /pivot/i.test(name))).toEqual([]);
+    expect(out.after.hidden.map((item) => item.quote)).toEqual(["Keep"]);
   });
 
   test("a sheet scoped defined name moves down when an earlier sheet goes", async () => {
