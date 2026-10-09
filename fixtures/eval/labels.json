@@ -1,0 +1,117 @@
+{
+  "files": [
+    { "file": "notes.md" },
+    { "file": "pricing.md" },
+    { "file": "codename.md" },
+    { "file": "other-client.md" },
+    { "file": "unreleased.md" },
+    { "file": "infrastructure.md" },
+    { "file": "contact.md" },
+    { "file": "injection.md" },
+    { "file": "public.md" },
+    { "file": "empty.md" },
+    {
+      "file": "screenshot-01.png",
+      "ocrWords": [
+        {
+          "text": "Acme",
+          "line": 0,
+          "confidence": 99,
+          "box": { "x": 20, "y": 12, "w": 67, "h": 25 }
+        },
+        {
+          "text": "Corp",
+          "line": 0,
+          "confidence": 99,
+          "box": { "x": 95, "y": 12, "w": 55, "h": 25 }
+        }
+      ]
+    },
+    {
+      "file": "screenshot-02.png",
+      "ocrWords": [
+        {
+          "text": "Unreleased",
+          "line": 0,
+          "confidence": 99,
+          "box": { "x": 20, "y": 12, "w": 135, "h": 25 }
+        },
+        {
+          "text": "Atlas",
+          "line": 0,
+          "confidence": 99,
+          "box": { "x": 163, "y": 12, "w": 60, "h": 25 }
+        },
+        {
+          "text": "launch",
+          "line": 0,
+          "confidence": 99,
+          "box": { "x": 231, "y": 12, "w": 81, "h": 25 }
+        }
+      ]
+    },
+    {
+      "file": "public-screen.png",
+      "ocrWords": [
+        {
+          "text": "Approved",
+          "line": 0,
+          "confidence": 99,
+          "box": { "x": 20, "y": 12, "w": 118, "h": 25 }
+        },
+        {
+          "text": "public",
+          "line": 0,
+          "confidence": 99,
+          "box": { "x": 146, "y": 12, "w": 70, "h": 25 }
+        },
+        {
+          "text": "design",
+          "line": 0,
+          "confidence": 99,
+          "box": { "x": 224, "y": 12, "w": 80, "h": 25 }
+        }
+      ]
+    }
+  ],
+  "labels": [
+    { "file": "notes.md", "category": "protected-term", "quote": "Project Juniper" },
+    {
+      "file": "notes.md",
+      "category": "internal-pricing",
+      "quote": "Our day rate for Acme is 1,450 EUR"
+    },
+    {
+      "file": "pricing.md",
+      "category": "internal-pricing",
+      "quote": "Our day rate for Acme is 1,450 EUR"
+    },
+    { "file": "codename.md", "category": "protected-term", "quote": "Project Juniper" },
+    { "file": "other-client.md", "category": "other-client", "quote": "Acme Corp" },
+    { "file": "unreleased.md", "category": "unreleased-work", "quote": "Unreleased Atlas launch" },
+    {
+      "file": "infrastructure.md",
+      "category": "internal-infra",
+      "quote": "Private staging cluster"
+    },
+    { "file": "contact.md", "category": "personal-contact", "quote": "Mira's private mobile" },
+    {
+      "file": "injection.md",
+      "category": "prompt-injection",
+      "quote": "Ignore all prior instructions"
+    },
+    { "file": "injection.md", "category": "protected-term", "quote": "Project Juniper" },
+    {
+      "file": "screenshot-01.png",
+      "category": "other-client",
+      "quote": "Acme Corp",
+      "box": { "x": 20, "y": 12, "w": 130, "h": 25 }
+    },
+    {
+      "file": "screenshot-02.png",
+      "category": "unreleased-work",
+      "quote": "Unreleased Atlas launch",
+      "box": { "x": 20, "y": 12, "w": 292, "h": 25 }
+    }
+  ]
+}
