@@ -198,7 +198,7 @@ for (const requestedMode of modes) {
 const report = {
   fixtureRoot: fileURLToPath(root),
   provider,
-  deterministicLayers: "Configured server layers; currently stubs until Stream 2 wires detection.",
+  deterministicLayers: "Configured server layers: the real detection and redaction layers.",
   ocr: "Fixed fixture OCR words to isolate model evaluation.",
   runs,
 };
@@ -206,7 +206,7 @@ const report = {
 if (values.json) console.log(JSON.stringify(report));
 else {
   console.log(
-    `Provider: ${provider}. OCR uses fixed fixture words. Deterministic scores use the configured server layers (currently stubs).`,
+    `Provider: ${provider}. OCR uses fixed fixture words. Deterministic scores use the real detection and redaction layers.`,
   );
 
   for (const run of runs) {

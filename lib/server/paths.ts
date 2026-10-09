@@ -9,7 +9,7 @@ const safeId = /^[A-Za-z0-9_-]{1,80}$/;
 
 /** The workspace root. `SENTINEL_WORKSPACE_DIR` lets tests use a temp folder. */
 export function workspaceRoot(): string {
-  return resolve(process.env.SENTINEL_WORKSPACE_DIR || join(process.cwd(), "workspace"));
+  return resolve(/*turbopackIgnore: true*/ process.env.SENTINEL_WORKSPACE_DIR || join(process.cwd(), "workspace"));
 }
 
 /** Ids come from URLs; anything that is not a generated id cannot exist. */

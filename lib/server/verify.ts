@@ -79,7 +79,7 @@ export async function verifyReviewed(input: VerifyInput): Promise<VerifyOutput> 
   const analysis = await analyzeFiles({
     ...input,
     files: input.copies.map((copy) => ({ ...copy.file, status: "pending" })),
-    readFile: async (file) => new Uint8Array(await readFile(paths.get(file.id) ?? "")),
+    readFile: async (file) => new Uint8Array(await readFile(/*turbopackIgnore: true*/ paths.get(file.id) ?? "")),
     // New OCR of the reviewed copies stays in memory; derived/ keeps the originals' OCR.
     ocrCache: {
       read: async (fileId) => ocr.get(fileId) ?? null,
