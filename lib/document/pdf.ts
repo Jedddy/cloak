@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
 import * as mupdf from "mupdf";
 
 import type { DocumentExtractInput, DocumentImageBytes } from "@/lib/contract/interfaces";
-import { PAGE_SCALE } from "@/lib/contract/schemas";
-import type { Box, DocumentModel, DocumentSection, DocumentWord, HiddenItem } from "@/lib/contract/schemas";
+import { PAGE_SCALE, pageAnchor } from "@/lib/contract/schemas";
+import type { Box, DocumentModel, DocumentSection, HiddenItem } from "@/lib/contract/schemas";
+
+import { emptyModel, shortHash } from "./shared";
 
 // PDF extraction and page rendering with MuPDF (KTD3, KTD9). Word boxes are in
 // render pixels: page points minus the page origin, times PAGE_SCALE.
@@ -48,7 +49,7 @@ export function openPdf(bytes: Uint8Array, own: Own): mupdf.PDFDocument {
 }
 
 export function hiddenId(kind: HiddenItem["kind"], ...parts: string[]): string {
-  return `${kind}-${createHash("sha256").update(parts.join("\0")).digest("hex").slice(0, 12)}`;
+  return `${kind}-${shortHash(parts.join("\0"))}`;
 }
 
 const INFO_FIELDS = ["Author", "Creator", "Producer", "Title", "Subject", "Keywords"];
@@ -92,15 +93,12 @@ export function pageWords(page: mupdf.PDFPage, own: Own) {
         return;
       }
 
-      const xs = [quad[0], quad[2], quad[4], quad[6]];
-      const ys = [quad[1], quad[3], quad[5], quad[7]];
-
       word ??= { text: "", x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, size };
       word.text += c;
-      word.x0 = Math.min(word.x0, ...xs);
-      word.y0 = Math.min(word.y0, ...ys);
-      word.x1 = Math.max(word.x1, ...xs);
-      word.y1 = Math.max(word.y1, ...ys);
+      word.x0 = Math.min(word.x0, quad[0], quad[2], quad[4], quad[6]);
+      word.y0 = Math.min(word.y0, quad[1], quad[3], quad[5], quad[7]);
+      word.x1 = Math.max(word.x1, quad[0], quad[2], quad[4], quad[6]);
+      word.y1 = Math.max(word.y1, quad[1], quad[3], quad[5], quad[7]);
     },
   });
   endLine();
@@ -113,6 +111,26 @@ export function isHiddenWord(word: PdfWord, [left, top, right, bottom]: mupdf.Re
   const outside = word.x1 <= left || word.x0 >= right || word.y1 <= top || word.y0 >= bottom;
 
   return outside || word.size < 1;
+}
+
+/** True for a signature form field (its `FT` entry). */
+export function isSignatureField(field: mupdf.PDFObject): boolean {
+  return field.isName() && field.asName() === "Sig";
+}
+
+/** True for annotation types that are comments rather than links, popups or form widgets. */
+export function isCommentAnnotation(type: string): boolean {
+  return type !== "Link" && type !== "Popup" && type !== "Widget";
+}
+
+/** True for a JavaScript action dictionary. */
+export function isJavaScriptAction(action: mupdf.PDFObject): boolean {
+  return action.isDictionary() && action.get("S").isName() && action.get("S").asName() === "JavaScript";
+}
+
+/** The name of an optional-content group, or "". */
+export function layerName(group: mupdf.PDFObject): string {
+  return group.get("Name").isString() ? group.get("Name").asString() : "";
 }
 
 /** The host of an http(s) link, or "" for anything else. */
@@ -141,18 +159,7 @@ export async function extractPdf(input: DocumentExtractInput): Promise<DocumentM
       hidden.set(item.id, { category: "hidden-data", ...item });
     };
 
-    const model: DocumentModel = {
-      format: "pdf",
-      text: "",
-      sections: [],
-      segments: [],
-      words: [],
-      hidden: [],
-      images: [],
-      notAnalysed: [],
-      signed: false,
-      pages: [],
-    };
+    const model = emptyModel("pdf");
 
     const startSection = () => {
       if (model.text) {
@@ -163,11 +170,15 @@ export async function extractPdf(input: DocumentExtractInput): Promise<DocumentM
     for (let index = 0; index < doc.countPages(); index += 1) {
       const number = index + 1;
       const page = own(doc.loadPage(index));
-      const [left, top, right, bottom] = page.getBounds();
+      const bounds = page.getBounds();
+      const [left, top, right, bottom] = bounds;
       const { lines, hasImageBlock } = pageWords(page, own);
       const section: DocumentSection = { title: `Page ${number}`, kind: "page", hidden: false, page: number, items: [] };
       const offPage: string[] = [];
-      const start = (startSection(), model.text.length);
+
+      startSection();
+
+      const start = model.text.length;
 
       lines.forEach((line, lineIndex) => {
         if (lineIndex > 0) {
@@ -186,7 +197,7 @@ export async function extractPdf(input: DocumentExtractInput): Promise<DocumentM
             h: Math.max(0.1, (word.y1 - word.y0) * PAGE_SCALE),
           };
 
-          if (isHiddenWord(word, [left, top, right, bottom])) {
+          if (isHiddenWord(word, bounds)) {
             offPage.push(word.text);
           }
 
@@ -194,9 +205,9 @@ export async function extractPdf(input: DocumentExtractInput): Promise<DocumentM
             text: word.text,
             start: model.text.length,
             end: model.text.length + word.text.length,
-            anchor: `page:${number}`,
+            anchor: pageAnchor(number),
             box,
-          } satisfies DocumentWord);
+          });
           model.text += word.text;
         });
       });
@@ -238,7 +249,7 @@ export async function extractPdf(input: DocumentExtractInput): Promise<DocumentM
         const field = widget.getObject().getInheritable("FT");
         const value = widget.getValue();
 
-        if (field.isName() && field.asName() === "Sig") {
+        if (isSignatureField(field)) {
           model.signed ||= !widget.getObject().getInheritable("V").isNull();
         } else if (value && value !== "Off") {
           addHidden({
@@ -253,7 +264,7 @@ export async function extractPdf(input: DocumentExtractInput): Promise<DocumentM
       for (const annotation of page.getAnnotations().map(own)) {
         const type = annotation.getType();
 
-        if (type === "Link" || type === "Popup" || type === "Widget") {
+        if (!isCommentAnnotation(type)) {
           continue;
         }
 
@@ -319,18 +330,14 @@ export async function extractPdf(input: DocumentExtractInput): Promise<DocumentM
       addHidden({ id: hiddenId("attachment", name), kind: "attachment", note: `Attached file '${name}'`, quote: name });
     }
 
-    const openAction = root.get("OpenAction");
-
-    const runsScript =
-      !root.get("Names", "JavaScript").isNull() ||
-      (openAction.isDictionary() && openAction.get("S").isName() && openAction.get("S").asName() === "JavaScript");
+    const runsScript = !root.get("Names", "JavaScript").isNull() || isJavaScriptAction(root.get("OpenAction"));
 
     if (runsScript) {
       addHidden({ id: hiddenId("javascript"), kind: "javascript", note: "The document contains JavaScript", quote: null });
     }
 
     root.get("OCProperties", "D", "OFF").forEach((group) => {
-      const name = group.get("Name").isString() ? group.get("Name").asString() : "";
+      const name = layerName(group);
 
       addHidden({
         id: hiddenId("hidden-layer", name),

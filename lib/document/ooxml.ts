@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import { DOMParser, XMLSerializer, type Document, type Element, type Node } from "@xmldom/xmldom";
 import JSZip from "jszip";
 
@@ -8,13 +6,17 @@ import type { DocumentModel, DocumentSection, HiddenItem } from "@/lib/contract/
 
 import { extractDocx } from "./docx";
 import { extractPptx } from "./pptx";
+import { emptyModel, shortHash } from "./shared";
 import { extractXlsx } from "./xlsx";
 
-// Shared OOXML plumbing for DOCX, XLSX and PPTX (plan KTD5): zip parts,
+// Shared OOXML plumbing for DOCX, XLSX and PPTX zip parts,
 // XML, relationships, the model builder, and the inventory every format
 // shares (metadata, images, objects Cloak cannot read, signatures).
 
 const unreadable = "The document cannot be read.";
+
+/** Compares part paths so that header2 sorts before header10. */
+export const natural = (a: string, b: string) => a.localeCompare(b, "en", { numeric: true });
 
 export type Pkg = {
   zip: JSZip;
@@ -51,7 +53,7 @@ export async function loadPackage(bytes: Uint8Array): Promise<Pkg> {
 
   const names = Object.keys(zip.files)
     .filter((name) => !zip.files[name].dir)
-    .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+    .sort(natural);
 
   const cache = new Map<string, Document>();
 
@@ -103,7 +105,8 @@ export function isElement(node: Node): node is Element {
   return node.nodeType === 1;
 }
 
-function elementsOf(root: Document | Element): Element[] {
+/** `root` (or a document's root element) and all elements under it, in document order. */
+export function elementsOf(root: Document | Element): Element[] {
   const out: Element[] = [];
   const first = "documentElement" in root ? root.documentElement : root;
   const stack: Node[] = first ? [first] : [];
@@ -154,10 +157,6 @@ export function attr(element: Element, name: string): string | null {
   return element.hasAttribute(name) ? element.getAttribute(name) : null;
 }
 
-export function shortHash(text: string): string {
-  return createHash("sha256").update(text).digest("hex").slice(0, 12);
-}
-
 // ---------------------------------------------------------------------------
 // Relationships
 // ---------------------------------------------------------------------------
@@ -169,6 +168,20 @@ export type Relationship = {
   target: string;
   external: boolean;
 };
+
+/** The `.rels` part of a part ("" for the package-level `_rels/.rels`). */
+export function relsPathOf(part: string): string {
+  const slash = part.lastIndexOf("/");
+
+  return `${part.slice(0, slash + 1)}_rels/${part.slice(slash + 1)}.rels`;
+}
+
+/** The part a `.rels` part describes; "" for the package-level one. */
+export function ownerOf(relsPart: string): string {
+  const match = /^(.*)_rels\/(.*)\.rels$/.exec(relsPart);
+
+  return match ? `${match[1]}${match[2]}` : "";
+}
 
 function resolvePath(directory: string, target: string): string {
   const parts = target.startsWith("/") ? [] : directory.split("/").filter(Boolean);
@@ -188,7 +201,7 @@ function resolvePath(directory: string, target: string): string {
 export async function relationships(pkg: Pkg, part: string): Promise<Relationship[]> {
   const slash = part.lastIndexOf("/");
   const directory = part.slice(0, slash + 1);
-  const document = await pkg.xml(`${directory}_rels/${part.slice(slash + 1)}.rels`);
+  const document = await pkg.xml(relsPathOf(part));
 
   if (!document) {
     return [];
@@ -235,6 +248,13 @@ export async function contentType(pkg: Pkg, part: string): Promise<string | null
 /** A text node (or whole cell) of an item. */
 export type Piece = { text: string; part: string; node: number; cell?: string };
 
+/** Reads the pieces of text nodes under any element of `root`, numbered by their index among all `names` nodes of `root`. */
+export function pieceReader(root: Document | Element, names: string[], part: string): (scope: Document | Element) => Piece[] {
+  const index = new Map(textNodes(root, names).map((node, at) => [node, at]));
+
+  return (scope) => textNodes(scope, names).map((node) => ({ text: node.textContent ?? "", part, node: index.get(node) ?? -1 }));
+}
+
 export type ModelBuilder = {
   model: DocumentModel;
   /** Sections join the model when their first item arrives, so empty ones never show. */
@@ -246,18 +266,7 @@ export type ModelBuilder = {
 };
 
 export function createBuilder(format: DocumentModel["format"]): ModelBuilder {
-  const model: DocumentModel = {
-    format,
-    text: "",
-    sections: [],
-    segments: [],
-    words: [],
-    hidden: [],
-    images: [],
-    notAnalysed: [],
-    signed: false,
-    pages: [],
-  };
+  const model = emptyModel(format);
 
   return {
     model,
@@ -308,6 +317,29 @@ const imageMimes = new Map([
   ["jpeg", "image/jpeg"],
 ]);
 
+export type ObjectKind = "Chart" | "SmartArt" | "Embedded object";
+
+const objectReasons: Record<ObjectKind, string> = {
+  Chart: "Chart contents are not read",
+  SmartArt: "SmartArt text is not read",
+  "Embedded object": "Embedded objects are not opened",
+};
+
+/** The kind of chart, SmartArt data or embedded object a part is, or null for any other part. */
+export function objectKind(path: string): ObjectKind | null {
+  const base = path.slice(path.lastIndexOf("/") + 1);
+
+  if (path.includes("/charts/") && /^chart[^/]*\.xml$/.test(base)) {
+    return "Chart";
+  }
+
+  if (path.includes("/diagrams/") && /^data[^/]*\.xml$/.test(base)) {
+    return "SmartArt";
+  }
+
+  return path.includes("/embeddings/") ? "Embedded object" : null;
+}
+
 function firstText(document: Document | null, localName: string): string {
   if (!document) {
     return "";
@@ -355,6 +387,7 @@ async function inventory(pkg: Pkg, builder: ModelBuilder): Promise<void> {
   for (const name of pkg.names) {
     const base = name.slice(name.lastIndexOf("/") + 1);
     const extension = base.slice(base.lastIndexOf(".") + 1).toLowerCase();
+    const kind = objectKind(name);
 
     if (name.includes("/media/")) {
       const mime = imageMimes.get(extension);
@@ -364,12 +397,8 @@ async function inventory(pkg: Pkg, builder: ModelBuilder): Promise<void> {
       } else {
         model.notAnalysed.push({ label: `Image: ${name}`, reason: "Image format not analysed" });
       }
-    } else if (name.includes("/charts/") && /^chart[^/]*\.xml$/.test(base)) {
-      model.notAnalysed.push({ label: `Chart ${name}`, reason: "Chart contents are not read" });
-    } else if (name.includes("/diagrams/") && /^data[^/]*\.xml$/.test(base)) {
-      model.notAnalysed.push({ label: `SmartArt ${name}`, reason: "SmartArt text is not read" });
-    } else if (name.includes("/embeddings/")) {
-      model.notAnalysed.push({ label: `Embedded object ${name}`, reason: "Embedded objects are not opened" });
+    } else if (kind) {
+      model.notAnalysed.push({ label: `${kind} ${name}`, reason: objectReasons[kind] });
     } else if (base === "vbaProject.bin") {
       model.notAnalysed.push({ label: `Macros ${name}`, reason: "Macro code is not read" });
     } else if (name.startsWith("_xmlsignatures/")) {
@@ -380,8 +409,7 @@ async function inventory(pkg: Pkg, builder: ModelBuilder): Promise<void> {
   const relParts = pkg.names.filter((name) => name.endsWith(".rels") && !name.startsWith("xl/externalLinks/"));
 
   for (const relsPart of relParts) {
-    const match = /^(.*)_rels\/(.*)\.rels$/.exec(relsPart);
-    const rels = await relationships(pkg, match ? `${match[1]}${match[2]}` : "");
+    const rels = await relationships(pkg, ownerOf(relsPart));
 
     for (const rel of rels.filter((entry) => entry.external)) {
       const host = hostOf(rel.target);

@@ -1,9 +1,14 @@
-import { attr, descendants, relationships, requiredXml, textNodes, type ModelBuilder, type Pkg } from "./ooxml";
+import { attr, descendants, natural, pieceReader, relationships, requiredXml, type ModelBuilder, type Pkg } from "./ooxml";
 
-// PPTX extraction (plan U3). A segment's `node` is the node's index in
-// textNodes(part, ["a:t"]); legacy comment parts use ["p:text"] instead.
+// PPTX extraction. A segment's `node` is the node's index in
+// textNodes(part, pptxTextNames); legacy comment parts use pptxCommentNames instead.
 
-const natural = (a: string, b: string) => a.localeCompare(b, "en", { numeric: true });
+export const pptxTextNames = ["a:t"];
+
+/** Text node names of a comment part: modern comments use `a:t`, legacy ones `p:text`. */
+export function pptxCommentNames(part: string): string[] {
+  return part.includes("modernComment") ? pptxTextNames : ["p:text"];
+}
 
 export async function extractPptx(pkg: Pkg, builder: ModelBuilder): Promise<void> {
   const presentation = await requiredXml(pkg, "ppt/presentation.xml");
@@ -17,13 +22,11 @@ export async function extractPptx(pkg: Pkg, builder: ModelBuilder): Promise<void
       return;
     }
 
-    const index = new Map(textNodes(document, ["a:t"]).map((node, at) => [node, at]));
+    const piecesOf = pieceReader(document, pptxTextNames, part);
     const section = builder.section(title, "flow", hidden);
 
     for (const paragraph of descendants(document, "p")) {
-      const pieces = textNodes(paragraph, ["a:t"]).map((node) => ({ text: node.textContent ?? "", part, node: index.get(node) ?? -1 }));
-
-      builder.item(section, title, null, null, pieces);
+      builder.item(section, title, null, null, piecesOf(paragraph));
     }
   };
 
@@ -92,16 +95,14 @@ export async function extractPptx(pkg: Pkg, builder: ModelBuilder): Promise<void
 
   for (const part of pkg.names.filter((name) => /^ppt\/comments\/[^/]+\.xml$/.test(name))) {
     const document = await requiredXml(pkg, part);
-    const names = part.includes("modernComment") ? ["a:t"] : ["p:text"];
-    const index = new Map(textNodes(document, names).map((node, at) => [node, at]));
+    const piecesOf = pieceReader(document, pptxCommentNames(part), part);
     const authors: string[] = [];
 
     for (const comment of descendants(document, "cm")) {
       const author = authorNames.get(attr(comment, "authorId") ?? "") ?? "unknown author";
-      const pieces = textNodes(comment, names).map((node) => ({ text: node.textContent ?? "", part, node: index.get(node) ?? -1 }));
 
       authors.push(author);
-      builder.item(comments, `Comment by ${author}`, null, null, pieces);
+      builder.item(comments, `Comment by ${author}`, null, null, piecesOf(comment));
     }
 
     const unique = [...new Set(authors)];

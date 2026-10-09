@@ -1,14 +1,12 @@
 import type { DocumentResidueInput } from "@/lib/contract/interfaces";
+import { RESIDUE_MIN_NEEDLE } from "@/lib/contract/schemas";
+import { normalizeText } from "@/lib/utils";
 import { inflateSync } from "node:zlib";
 import JSZip from "jszip";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 // Independent residue check (KTD6): searches a reviewed copy for text that
 // should be gone, using pdfjs (not MuPDF) and a raw look at every stream.
-
-const MIN_NEEDLE = 3;
-
-const normalize = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
 
 const XML_ENTITIES = new Map([
   ["amp", "&"],
@@ -39,7 +37,7 @@ async function pdfjsTexts(bytes: Uint8Array): Promise<string[]> {
       const page = await doc.getPage(number);
       const items = (await page.getTextContent()).items.flatMap((item) => ("str" in item ? [item.str] : []));
 
-      texts.push(normalize(items.join(" ")), normalize(items.join("")));
+      texts.push(normalizeText(items.join(" ")), normalizeText(items.join("")));
     }
 
     return texts;
@@ -84,7 +82,7 @@ async function ooxmlViews(bytes: Uint8Array): Promise<string[]> {
       // "table" cannot hit markup.
       const values = [...xml.matchAll(/="([^"]*)"|='([^']*)'/g)].map((match) => match[1] ?? match[2]);
 
-      views.push(normalize(decodeEntities(xml.replace(/<[^>]*>/g, ""))), normalize(decodeEntities(values.join("\n"))));
+      views.push(normalizeText(decodeEntities(xml.replace(/<[^>]*>/g, ""))), normalizeText(decodeEntities(values.join("\n"))));
     }
   }
 
@@ -93,7 +91,7 @@ async function ooxmlViews(bytes: Uint8Array): Promise<string[]> {
 
 /** The needles (3 characters or more, case-insensitive) that are still present in the copy. */
 export async function residue(input: DocumentResidueInput): Promise<string[]> {
-  const needles = input.needles.filter((needle) => normalize(needle).length >= MIN_NEEDLE);
+  const needles = input.needles.filter((needle) => normalizeText(needle).length >= RESIDUE_MIN_NEEDLE);
 
   if (needles.length === 0) {
     return [];
@@ -111,7 +109,7 @@ export async function residue(input: DocumentResidueInput): Promise<string[]> {
   }
 
   const found = needles.filter((needle) => {
-    const lower = normalize(needle);
+    const lower = normalizeText(needle);
 
     return encodings(lower).some((encoded) => views.some((view) => view.includes(encoded)));
   });

@@ -1,21 +1,30 @@
 import * as mupdf from "mupdf";
 
 import type { DocumentRedactionInput, DocumentRedactionResult } from "@/lib/contract/interfaces";
-import { PAGE_SCALE } from "@/lib/contract/schemas";
-import type { Box } from "@/lib/contract/schemas";
+import { PAGE_SCALE, RESIDUE_MIN_NEEDLE, pageOfAnchor } from "@/lib/contract/schemas";
+import type { Box, DocumentWord } from "@/lib/contract/schemas";
 import { padBox, paintBox } from "@/lib/redact/image";
+import { normalizeText } from "@/lib/utils";
 
-import { hiddenId, isHiddenWord, linkHost, openPdf, pageWords, scoped } from "./pdf";
+import {
+  hiddenId,
+  isCommentAnnotation,
+  isHiddenWord,
+  isJavaScriptAction,
+  isSignatureField,
+  layerName,
+  linkHost,
+  openPdf,
+  pageWords,
+  scoped,
+} from "./pdf";
+import { appendTo } from "./shared";
 
 // PDF redaction (KTD3, KTD4, KTD10): MuPDF Redact annotations remove the text,
 // image pixels and line art under each box. A page whose text survives, or that
 // uses a Type3 font, is replaced by a painted render of the original page.
 
 const REDACT_PADDING_PT = 1;
-
-const MIN_NEEDLE = 3;
-
-const collapse = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
 
 /** Removes every entry that points at one of `nums` from an array, searching nested arrays. */
 function dropRefs(array: mupdf.PDFObject, nums: Set<number>): void {
@@ -62,7 +71,6 @@ function usesLayer(resources: mupdf.PDFObject, nums: Set<number>, seen = new Set
 export async function redactPdf(input: DocumentRedactionInput): Promise<DocumentRedactionResult> {
   return scoped((own) => {
     const doc = openPdf(input.bytes, own);
-    const original = openPdf(input.bytes, own);
     const root = doc.getTrailer().get("Root");
     const remove = new Set(input.removeHidden);
     const pageCount = doc.countPages();
@@ -72,8 +80,8 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
     const needles = new Map<number, string[]>();
     const flatten = new Map<number, "text" | "layer">();
 
-    const addRect = (index: number, rect: mupdf.Rect) => rects.set(index, [...(rects.get(index) ?? []), rect]);
-    const addNeedle = (index: number, text: string) => needles.set(index, [...(needles.get(index) ?? []), collapse(text)]);
+    const addRect = (index: number, rect: mupdf.Rect) => appendTo(rects, index, rect);
+    const addNeedle = (index: number, text: string) => appendTo(needles, index, normalizeText(text));
 
     const addBox = (index: number, box: Box) => {
       const [left, top] = bounds[index]!;
@@ -86,15 +94,19 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
       ]);
     };
 
-    // 1. Text spans become the boxes of the words they overlap; anchored regions are used as-is.
+    // Text spans become the boxes of the words they overlap; anchored regions are used as-is.
+    const pageIndexed = input.model.words.flatMap((word) => {
+      const page = pageOfAnchor(word.anchor);
+
+      return page === null ? [] : [{ index: page - 1, word }];
+    });
+
     for (const span of input.spans) {
-      const byPage = new Map<number, typeof input.model.words>();
+      const byPage = new Map<number, DocumentWord[]>();
 
-      for (const word of input.model.words) {
-        const page = /^page:(\d+)$/.exec(word.anchor);
-
-        if (page && word.start < span.end && word.end > span.start) {
-          byPage.set(Number(page[1]) - 1, [...(byPage.get(Number(page[1]) - 1) ?? []), word]);
+      for (const { index, word } of pageIndexed) {
+        if (word.start < span.end && word.end > span.start) {
+          appendTo(byPage, index, word);
         }
       }
 
@@ -105,10 +117,10 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
     }
 
     for (const region of input.regions) {
-      const page = /^page:(\d+)$/.exec(region.anchor);
+      const page = pageOfAnchor(region.anchor);
 
-      if (page && Number(page[1]) <= pageCount) {
-        addBox(Number(page[1]) - 1, region.box);
+      if (page !== null && page <= pageCount) {
+        addBox(page - 1, region.box);
       }
     }
 
@@ -119,10 +131,11 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
       root.delete("Outlines");
     }
 
-    // 2. Hidden items, found again by the ids pdf.ts derived.
+    // Hidden items, found again by the ids pdf.ts derived.
     const widgetNums = new Set<number>();
+    const scanPages = remove.size === 0 ? 0 : pageCount;
 
-    for (let index = 0; index < pageCount; index += 1) {
+    for (let index = 0; index < scanPages; index += 1) {
       scoped((o) => {
         const page = o(doc.loadPage(index));
         const number = index + 1;
@@ -132,7 +145,7 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
           const value = widget.getValue();
           const id = hiddenId("form-field", widget.getName(), value);
 
-          if (!(field.isName() && field.asName() === "Sig") && value && value !== "Off" && remove.has(id)) {
+          if (!isSignatureField(field) && value && value !== "Off" && remove.has(id)) {
             widgetNums.add(widget.getObject().asIndirect());
             page.deleteAnnotation(widget);
           }
@@ -141,7 +154,7 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
         for (const annotation of page.getAnnotations().map(o)) {
           const type = annotation.getType();
 
-          if (type !== "Link" && type !== "Popup" && type !== "Widget") {
+          if (isCommentAnnotation(type)) {
             const id = hiddenId("annotation", String(number), type, annotation.getAuthor(), annotation.getContents());
 
             if (remove.has(id)) {
@@ -189,7 +202,7 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
         root.get("Names").delete("JavaScript");
       }
 
-      if (root.get("OpenAction", "S").isName() && root.get("OpenAction", "S").asName() === "JavaScript") {
+      if (isJavaScriptAction(root.get("OpenAction"))) {
         root.delete("OpenAction");
       }
     }
@@ -197,9 +210,7 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
     const layerNums = new Set<number>();
 
     root.get("OCProperties", "D", "OFF").forEach((group) => {
-      const name = group.get("Name").isString() ? group.get("Name").asString() : "";
-
-      if (group.isIndirect() && remove.has(hiddenId("hidden-layer", name))) {
+      if (group.isIndirect() && remove.has(hiddenId("hidden-layer", layerName(group)))) {
         layerNums.add(group.asIndirect());
       }
     });
@@ -220,7 +231,7 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
       }
     }
 
-    // 3. Native redaction, except on pages that are flattened anyway.
+    // Native redaction, except on pages that are flattened anyway.
     for (const [index, pageRects] of rects) {
       if (input.model.pages[index]?.type3) {
         flatten.set(index, "text");
@@ -244,12 +255,12 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
       }
     }
 
-    // 5. KTD10: a page whose text is still extractable is flattened.
+    // KTD10: a page whose text is still extractable is flattened.
     for (const [index, pageNeedles] of needles) {
       scoped((o) => {
-        const text = collapse(o(o(doc.loadPage(index)).toStructuredText("preserve-whitespace,clip=no")).asText());
+        const text = normalizeText(o(o(doc.loadPage(index)).toStructuredText("preserve-whitespace,clip=no")).asText());
 
-        if (!flatten.has(index) && pageNeedles.some((needle) => needle.length >= MIN_NEEDLE && text.includes(needle))) {
+        if (!flatten.has(index) && pageNeedles.some((needle) => needle.length >= RESIDUE_MIN_NEEDLE && text.includes(needle))) {
           flatten.set(index, "text");
         }
       });
@@ -257,9 +268,14 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
 
     const notes: DocumentRedactionResult["notes"] = [];
 
+    let original: mupdf.PDFDocument | undefined;
+
+    // The untouched copy is opened on the first flatten only.
+    const originalDoc = () => (original ??= openPdf(input.bytes, own));
+
     for (const [index, reason] of [...flatten].sort((a, b) => a[0] - b[0])) {
       scoped((o) => {
-        const source = o(original.loadPage(index));
+        const source = o(originalDoc().loadPage(index));
         const [left, top, right, bottom] = source.getBounds();
         const pixmap = o(source.toPixmap(mupdf.Matrix.scale(PAGE_SCALE, PAGE_SCALE), mupdf.ColorSpace.DeviceRGB, false, false));
         const samples = pixmap.getPixels();
@@ -290,7 +306,7 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
       notes.push({ kind: "flattened", note: `${input.fileName} page ${index + 1} flattened: ${why}.` });
     }
 
-    // 4. Metadata is always stripped (R17).
+    // Metadata is always stripped (R17).
     doc.getTrailer().delete("Info");
 
     for (const holder of [root, ...Array.from({ length: pageCount }, (_, index) => doc.findPage(index))]) {

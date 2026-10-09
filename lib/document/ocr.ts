@@ -1,6 +1,9 @@
+import { imageAnchor, pageAnchor } from "@/lib/contract/schemas";
 import type { Box, DocumentModel, DocumentWord, OcrWord } from "@/lib/contract/schemas";
 
-// Merges OCR output into a document model (plan Assumptions). Format-agnostic:
+import { appendTo } from "./shared";
+
+// Merges OCR output into a document model. Format-agnostic:
 // OCR boxes are already in the pixels of the image the OCR ran on (the PAGE_SCALE
 // render for a PDF page), which is what word boxes use.
 
@@ -23,7 +26,7 @@ export function withOcr(input: { model: DocumentModel; imageId: string; ocrWords
     throw new Error("No such image.");
   }
 
-  const anchor = image.page ? `page:${image.page}` : `image:${imageId}`;
+  const anchor = image.page === null ? imageAnchor(imageId) : pageAnchor(image.page);
   const layerWords = model.words.filter((word) => word.anchor === anchor);
   const kept = input.ocrWords.filter((ocr) => !layerWords.some((word) => overlapShare(ocr.box, word.box) > OVERLAP_SHARE));
 
@@ -34,7 +37,7 @@ export function withOcr(input: { model: DocumentModel; imageId: string; ocrWords
   const lines = new Map<number, OcrWord[]>();
 
   for (const ocr of kept) {
-    lines.set(ocr.line, [...(lines.get(ocr.line) ?? []), ocr]);
+    appendTo(lines, ocr.line, ocr);
   }
 
   let text = model.text ? `${model.text}\n\n` : "";

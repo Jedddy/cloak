@@ -1,25 +1,29 @@
 import type { Element } from "@xmldom/xmldom";
 
 import type { DocumentSection } from "@/lib/contract/schemas";
+import { columnName, columnNumber } from "@/lib/utils";
 
 import {
   attr,
   children,
   descendants,
+  pieceReader,
   relationships,
   requiredXml,
-  shortHash,
-  textNodes,
   type ModelBuilder,
   type Pkg,
   type Piece,
 } from "./ooxml";
+import { shortHash } from "./shared";
 
-// XLSX extraction (plan U3). Each cell is one whole-cell segment (node -1).
+// XLSX extraction. Each cell is one whole-cell segment (node -1).
 // Comment parts use text nodes `t` (legacy) or `text` (threaded); a
 // segment's `node` indexes textNodes(part, names) with those names.
 
-const truthy = new Set(["1", "true"]);
+export const truthy = new Set(["1", "true"]);
+
+/** Text node names of a comment part: threaded comments use `text`, legacy ones `t`. */
+export const xlsxCommentNames = (threaded: boolean) => (threaded ? ["text"] : ["t"]);
 
 /** Text of a shared string item or inline string: its `t`, or the `t` of each run. */
 function richText(element: Element): string {
@@ -28,16 +32,6 @@ function richText(element: Element): string {
     .filter((child) => child.localName === "t")
     .map((child) => child.textContent ?? "")
     .join("");
-}
-
-function columnName(index: number): string {
-  let name = "";
-
-  for (let n = index; n > 0; n = Math.floor((n - 1) / 26)) {
-    name = String.fromCharCode(65 + ((n - 1) % 26)) + name;
-  }
-
-  return name;
 }
 
 function fileName(target: string): string {
@@ -133,7 +127,7 @@ export async function extractXlsx(pkg: Pkg, builder: ModelBuilder): Promise<void
         const text = formula === "" ? value : `=${rewrite(formula)} ${value}`.trimEnd();
 
         if (match) {
-          const col = [...match[1]].reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+          const col = columnNumber(match[1]) - 1;
           const piece: Piece = { text, part, node: -1, cell: ref };
 
           builder.item(grid, `${name}!${ref}`, Number(match[2]) - 1, col, [piece]);
@@ -186,17 +180,15 @@ export async function extractXlsx(pkg: Pkg, builder: ModelBuilder): Promise<void
         continue;
       }
 
-      const names = threaded ? ["text"] : ["t"];
-      const index = new Map(textNodes(commentsDocument, names).map((node, at) => [node, at]));
+      const piecesOf = pieceReader(commentsDocument, xlsxCommentNames(threaded), rel.target);
       const listed = descendants(commentsDocument, "author").map((author) => author.textContent ?? "");
       const authors: string[] = [];
 
       for (const comment of descendants(commentsDocument, threaded ? "threadedComment" : "comment")) {
         const author = threaded ? persons.get(attr(comment, "personId") ?? "") : listed[Number(attr(comment, "authorId"))];
-        const pieces = textNodes(comment, names).map((node) => ({ text: node.textContent ?? "", part: rel.target, node: index.get(node) ?? -1 }));
 
         authors.push(author ?? "unknown author");
-        builder.item(comments, `${name}!${attr(comment, "ref") ?? ""}`, null, null, pieces);
+        builder.item(comments, `${name}!${attr(comment, "ref") ?? ""}`, null, null, piecesOf(comment));
       }
 
       const unique = [...new Set(authors)];

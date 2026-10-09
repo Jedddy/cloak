@@ -2,12 +2,13 @@ import type { Element, Node } from "@xmldom/xmldom";
 
 import type { DocumentSection } from "@/lib/contract/schemas";
 
-import { attr, children, descendants, requiredXml, shortHash, textNodes, type ModelBuilder, type Pkg } from "./ooxml";
+import { attr, children, descendants, pieceReader, requiredXml, textNodes, type ModelBuilder, type Pkg } from "./ooxml";
+import { shortHash } from "./shared";
 
-// DOCX extraction (plan U3). Text nodes are w:t and w:delText; a segment's
-// `node` is the node's index in textNodes(part, textNames).
+// DOCX extraction Text nodes are w:t and w:delText; a segment's
+// `node` is the node's index in textNodes(part, docxTextNames).
 
-const textNames = ["w:t", "w:delText"];
+export const docxTextNames = ["w:t", "w:delText"];
 
 const falsy = new Set(["0", "false", "off"]);
 
@@ -48,12 +49,22 @@ function hiddenRunKind(run: Element): "vanish" | "white" | "tiny" | null {
   return null;
 }
 
-export async function extractDocx(pkg: Pkg, builder: ModelBuilder): Promise<void> {
-  await requiredXml(pkg, "word/document.xml");
+/** A run's concealment kind, text and hidden item id; null when it is visible or has no text. */
+export function hiddenRunOf(run: Element): { kind: "vanish" | "white" | "tiny"; text: string; id: string } | null {
+  const kind = hiddenRunKind(run);
 
-  const byPrefix = (prefix: string) => pkg.names.filter((name) => new RegExp(`^word/${prefix}\\d*\\.xml$`).test(name));
+  const text = textNodes(run, docxTextNames)
+    .map((node) => node.textContent)
+    .join("");
 
-  const parts: { part: string; title: string }[] = [
+  return kind && text !== "" ? { kind, text, id: `${kind}-${shortHash(text)}` } : null;
+}
+
+/** The parts that hold text, in extraction order: body, headers, footers, notes, comments (not all need exist). */
+export function docxParts(names: string[]): { part: string; title: string }[] {
+  const byPrefix = (prefix: string) => names.filter((name) => new RegExp(`^word/${prefix}\\d*\\.xml$`).test(name));
+
+  return [
     { part: "word/document.xml", title: "Body" },
     ...byPrefix("header").map((part, index) => ({ part, title: `Header ${index + 1}` })),
     ...byPrefix("footer").map((part, index) => ({ part, title: `Footer ${index + 1}` })),
@@ -61,20 +72,21 @@ export async function extractDocx(pkg: Pkg, builder: ModelBuilder): Promise<void
     { part: "word/endnotes.xml", title: "Endnotes" },
     { part: "word/comments.xml", title: "Comments" },
   ];
+}
+
+export async function extractDocx(pkg: Pkg, builder: ModelBuilder): Promise<void> {
+  await requiredXml(pkg, "word/document.xml");
 
   let tables = 0;
 
-  for (const { part, title } of parts) {
+  for (const { part, title } of docxParts(pkg.names)) {
     const document = await pkg.xml(part);
 
     if (!document) {
       continue;
     }
 
-    const index = new Map(textNodes(document, textNames).map((node, at) => [node, at]));
-
-    const piecesOf = (element: Element) =>
-      textNodes(element, textNames).map((node) => ({ text: node.textContent ?? "", part, node: index.get(node) ?? -1 }));
+    const piecesOf = pieceReader(document, docxTextNames, part);
 
     let flow: DocumentSection = builder.section(title, "flow");
     let paragraphs = 0;
@@ -109,17 +121,14 @@ export async function extractDocx(pkg: Pkg, builder: ModelBuilder): Promise<void
 
     // Hidden content of this part.
     for (const run of descendants(document, "r")) {
-      const kind = hiddenRunKind(run);
+      const found = hiddenRunOf(run);
 
-      const text = textNodes(run, textNames)
-        .map((node) => node.textContent)
-        .join("");
-
-      if (kind && text !== "") {
+      if (found) {
+        const { kind, text } = found;
         const label = kind === "vanish" ? "Hidden text" : "Concealed text (white or tiny)";
 
         builder.hide({
-          id: `${kind}-${shortHash(text)}`,
+          id: found.id,
           kind: "hidden-text",
           note: `${label}: '${text.slice(0, 60)}'`,
           quote: text,
@@ -148,7 +157,7 @@ export async function extractDocx(pkg: Pkg, builder: ModelBuilder): Promise<void
       const id = attr(comment, "w:id");
       const author = attr(comment, "w:author") ?? "unknown author";
 
-      const text = textNodes(comment, textNames)
+      const text = textNodes(comment, docxTextNames)
         .map((node) => node.textContent)
         .join(" ");
 
