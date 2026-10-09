@@ -78,7 +78,7 @@ export function scanPng(bytes: Uint8Array): PngScan {
     const chunkEnd = offset + 8 + length + 4;
 
     if (chunkEnd > bytes.length) {
-      return clean;
+      return { trailingOffset: null, trailingSize: 0, hasMetadata };
     }
 
     if (type === "tEXt" || type === "zTXt" || type === "iTXt" || type === "eXIf") {
@@ -141,8 +141,11 @@ export function scanJpeg(bytes: Uint8Array): JpegScan {
     }
 
     if (marker === 0xd9) {
-      lastEoiEnd = offset;
-      continue;
+      if (lastEoiEnd === null) {
+        lastEoiEnd = offset;
+      }
+
+      break;
     }
 
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
@@ -161,6 +164,7 @@ export function scanJpeg(bytes: Uint8Array): JpegScan {
       }
 
       let pos = offset + headerLength;
+      let imageEnd: number | null = null;
 
       while (pos + 1 < bytes.length) {
         if (bytes[pos] !== 0xff) {
@@ -181,11 +185,23 @@ export function scanJpeg(bytes: Uint8Array): JpegScan {
         }
 
         if (inner === 0xd9) {
-          lastEoiEnd = pos + 2;
+          imageEnd = pos + 2;
           pos += 2;
           break;
         }
 
+        break;
+      }
+
+      if (imageEnd !== null) {
+        if (lastEoiEnd === null) {
+          lastEoiEnd = imageEnd;
+        }
+
+        offset = pos;
+
+        // The first end marker wins; everything after it is trailing data,
+        // even when it contains another end marker.
         break;
       }
 

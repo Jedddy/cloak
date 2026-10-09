@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { protectedTerms, scanTerm, slugTerm } from "./protected-terms";
+import { protectedTerms, scanTerm, scanTermWords, slugTerm } from "./protected-terms";
 
 describe("slugTerm", () => {
   test("builds a stable group id", () => {
@@ -23,6 +23,25 @@ describe("scanTerm", () => {
 
   test("ignores blank terms", () => {
     expect(scanTerm("some text", "   ")).toEqual([]);
+  });
+});
+
+describe("scanTermWords", () => {
+  test("matches word sequences across lines", () => {
+    const words = [
+      { text: "Acme", box: { x: 0, y: 0, w: 40, h: 10 }, confidence: 90, line: 0 },
+      { text: "Corp", box: { x: 0, y: 20, w: 40, h: 10 }, confidence: 90, line: 1 },
+    ];
+
+    expect(scanTermWords(words, "Acme Corp")).toHaveLength(1);
+    expect(scanTermWords(words, "Corp Acme")).toHaveLength(0);
+    expect(scanTermWords(words, "   ")).toEqual([]);
+  });
+
+  test("ignores punctuation attached to words", () => {
+    const words = [{ text: "Corp,", box: { x: 0, y: 0, w: 40, h: 10 }, confidence: 90, line: 0 }];
+
+    expect(scanTermWords(words, "Corp")).toHaveLength(1);
   });
 });
 
@@ -85,6 +104,25 @@ describe("protectedTerms", () => {
       box: { x: 240, y: 8, w: 70, h: 18 },
       quote: "Juniper",
     });
+  });
+
+  test("matches a multi-word term split across ocr lines", async () => {
+    const candidates = await protectedTerms({
+      fileId: "f2",
+      fileName: "shot.png",
+      text: "Acme\nCorp",
+      ocrWords: [
+        { text: "Acme", box: { x: 0, y: 0, w: 40, h: 10 }, confidence: 90, line: 0 },
+        { text: "Corp", box: { x: 0, y: 20, w: 40, h: 10 }, confidence: 90, line: 1 },
+      ],
+      protectedTerms: [],
+      otherClientNames: ["Acme Corp"],
+    });
+
+    const evidence = candidates[0]?.detections[0]?.evidence[0];
+
+    expect(candidates).toHaveLength(1);
+    expect(evidence).toEqual({ type: "image-region", box: { x: 0, y: 0, w: 40, h: 30 }, quote: "Acme Corp" });
   });
 
   test("returns nothing when no term matches", async () => {

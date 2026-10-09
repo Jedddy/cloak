@@ -112,6 +112,30 @@ describe("merge", () => {
     expect(merged[0]?.reason).toBe("This email address identifies a person.");
   });
 
+  test("unions bridge-connected findings regardless of order", () => {
+    const span = (start: number, end: number): Evidence => ({ type: "text-span", start, end, line: 0, quote: "x" });
+
+    const merged = merge({
+      candidates: [
+        candidate({
+          category: "secret",
+          detections: [{ method: "rule", ruleId: "a", evidence: [span(0, 5)] }],
+        }),
+        candidate({
+          category: "secret",
+          detections: [{ method: "rule", ruleId: "c", evidence: [span(10, 15)] }],
+        }),
+        candidate({
+          category: "secret",
+          detections: [{ method: "rule", ruleId: "b", evidence: [span(3, 12)] }],
+        }),
+      ],
+    });
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.detections).toHaveLength(3);
+  });
+
   test("keeps separate findings for different spans and categories", () => {
     const merged = merge({
       candidates: [

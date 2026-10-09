@@ -60,6 +60,21 @@ describe("scanPng", () => {
   test("ignores non-png bytes", () => {
     expect(scanPng(new Uint8Array([1, 2, 3])).trailingSize).toBe(0);
   });
+
+  test("keeps observed metadata when a later chunk is truncated", () => {
+    const text = [0x61, 0x75, 0x74, 0x68, 0x6f, 0x72, 0x00, 0x6a, 0x6f];
+
+    const bytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      ...pngChunk("tEXt", text),
+      0x00, 0x00, 0x03, 0xe8, 0x49, 0x44, 0x41, 0x54,
+    ]);
+
+    const scan = scanPng(bytes);
+
+    expect(scan.hasMetadata).toBe(true);
+    expect(scan.trailingSize).toBe(0);
+  });
 });
 
 describe("scanJpeg", () => {
@@ -96,6 +111,21 @@ describe("scanJpeg", () => {
 
   test("ignores non-jpeg bytes", () => {
     expect(scanJpeg(new Uint8Array([1, 2, 3])).lastEoiEnd).toBeNull();
+  });
+
+  test("measures trailing from the first end marker", () => {
+    const bytes = new Uint8Array([
+      0xff, 0xd8,
+      0xff, 0xda, 0x00, 0x06, 0x01, 0x02, 0x03, 0x04,
+      0x05, 0xff, 0xd9,
+      0x48, 0x49, 0x44, 0x44, 0x45, 0x4e,
+      0xff, 0xd9,
+    ]);
+
+    const scan = scanJpeg(bytes);
+
+    expect(scan.lastEoiEnd).toBe(13);
+    expect(scan.trailingSize).toBe(bytes.length - 13);
   });
 });
 

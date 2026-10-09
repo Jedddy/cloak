@@ -31,13 +31,20 @@ function envValueRange(content: string, spanStart: number): { start: number; end
   }
 
   const valueStart = lineStart + equals + 1;
+  let valueEnd = lineEnd;
+
+  // Keep a trailing carriage return out of the replaced value so CRLF
+  // line endings survive redaction.
+  if (valueEnd > lineStart && content[valueEnd - 1] === "\r") {
+    valueEnd -= 1;
+  }
 
   // A span that does not reach the value leaves the line alone.
   if (spanStart >= lineEnd) {
     return null;
   }
 
-  return { start: valueStart, end: lineEnd };
+  return { start: valueStart, end: valueEnd };
 }
 
 export function redactText(input: TextRedactionInput): string {

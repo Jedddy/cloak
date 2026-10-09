@@ -1,8 +1,8 @@
 import type { FindRelatedInput, InconsistentRedactionsInput } from "@/lib/contract/interfaces";
 import type { Finding, FindingCandidate, PackageWarning } from "@/lib/contract/schemas";
 
-import { candidateForHits, hasQuote, ocrWordOffsets } from "./evidence";
-import { scanTerm, slugTerm } from "./protected-terms";
+import { candidateForHits, hasQuote, ocrWordOffsets, unionBox } from "./evidence";
+import { scanTerm, scanTermWords, slugTerm } from "./protected-terms";
 
 // Package checks (overview section 13, plan R17-R18). Exact related search
 // and the inconsistent-redaction warning. Pure functions over findings.
@@ -20,6 +20,27 @@ export function findRelatedExact(input: FindRelatedInput): Promise<FindingCandid
 
   for (const source of input.sources) {
     const offsets = source.ocrWords === null ? [] : ocrWordOffsets(source.ocrWords);
+
+    if (source.ocrWords !== null) {
+      for (const words of scanTermWords(source.ocrWords, clean)) {
+        candidates.push({
+          fileId: source.fileId,
+          category: "protected-term",
+          detections: [
+            {
+              method: "protected-term",
+              ruleId: null,
+              evidence: [{ type: "image-region", box: unionBox(words), quote: words.map((word) => word.text).join(" ") }],
+            },
+          ],
+          title: `Related: ${clean}`,
+          reason: "Exact match of a related term.",
+          relatedGroupId,
+        });
+      }
+
+      continue;
+    }
 
     for (const hit of scanTerm(source.text, clean)) {
       const found = candidateForHits({

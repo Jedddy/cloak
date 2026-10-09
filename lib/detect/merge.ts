@@ -67,6 +67,32 @@ export function merge(input: MergeInput): FindingCandidate[] {
     }
   }
 
+  // The insertion above joins only the first overlapping group. Union every
+  // pair of groups that still overlap so bridge order cannot split them.
+  let joined = true;
+
+  while (joined) {
+    joined = false;
+
+    for (let left = 0; left < groups.length; left += 1) {
+      for (let right = left + 1; right < groups.length; right += 1) {
+        const leftGroup = groups[left];
+        const rightGroup = groups[right];
+
+        if (leftGroup.some((a) => rightGroup.some((b) => candidatesOverlap(a, b)))) {
+          leftGroup.push(...rightGroup);
+          groups.splice(right, 1);
+          joined = true;
+          break;
+        }
+      }
+
+      if (joined) {
+        break;
+      }
+    }
+  }
+
   return groups.map((members) => {
     const first = members[0];
     const winner = members.find((member) => isRuleCandidate(member)) ?? first;

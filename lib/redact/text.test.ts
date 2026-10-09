@@ -42,6 +42,12 @@ describe("redactText", () => {
     ).toBe("[REDACTED]\r\nb");
   });
 
+  test("keeps carriage returns when redacting env values", () => {
+    expect(
+      redactText({ fileName: ".env", content: "API_KEY=sk-123\r\nDEBUG=true", spans: [{ start: 8, end: 14, category: "secret" }] }),
+    ).toBe("API_KEY=[REDACTED]\r\nDEBUG=true");
+  });
+
   test("leaves non-assignment env lines to span replacement", () => {
     expect(redactText({ fileName: ".env", content: "# just a comment", spans: [{ start: 2, end: 6, category: "other" }] })).toBe(
       "# [REDACTED] a comment",
