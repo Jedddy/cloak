@@ -182,6 +182,12 @@ export const AiAnalysisSchema = z.enum([
 
 export type AiAnalysis = z.infer<typeof AiAnalysisSchema>;
 
+/** Upload limits (R9). Larger files and more files are rejected. */
+export const UPLOAD_LIMITS = {
+  maxFileBytes: 25 * 1024 * 1024,
+  maxFilesPerPackage: 50,
+} as const;
+
 export const FileEntrySchema = z.object({
   id: z.string().min(1),
   originalName: z.string().min(1),
