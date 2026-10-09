@@ -50,7 +50,7 @@ import {
   type RecipientProfile,
 } from "@/lib/contract/schemas";
 import { categoryLabel, cn, formatBytes, plural } from "@/lib/utils";
-import { FileText, Image as ImageIcon, Upload, X } from "lucide-react";
+import { Check, FileText, Image as ImageIcon, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Bucket = "allowed" | "needsDecision" | "remove";
@@ -62,7 +62,7 @@ const buckets: { value: Bucket; label: string }[] = [
 ];
 
 const segmentItemClass =
-  "flex-1 rounded-[5px]! text-muted-foreground hover:bg-background/60 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs";
+  "flex-1 rounded-md! text-muted-foreground hover:bg-background/60 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs";
 
 export default function NewPackagePage() {
   const router = useRouter();
@@ -175,6 +175,14 @@ export default function NewPackagePage() {
       }
     }
 
+    for (const category of CategorySchema.options) {
+      next[category] ??= "needsDecision";
+    }
+
+    if (next.secret === "allowed") {
+      next.secret = "needsDecision";
+    }
+
     setEditBuckets(next);
     setEditingProfile(profile);
   }
@@ -212,6 +220,8 @@ export default function NewPackagePage() {
   }
 
   async function onCreate() {
+    if (creating) return;
+
     if (name.trim() === "") {
       setError("Give the package a name.");
 
@@ -250,7 +260,7 @@ export default function NewPackagePage() {
       const pkg = await createPackage({
         name: name.trim(),
         recipientId: resolvedRecipientId,
-        protectedTerms: terms,
+        protectedTerms: [...new Set([...terms, termInput.trim()].filter(Boolean))],
       });
 
       for (const [index, file] of files.entries()) {
@@ -279,7 +289,7 @@ export default function NewPackagePage() {
         ) : (
           <>
             <Skeleton className="h-7 w-48" />
-            <Skeleton className="h-4 w-80" />
+            <Skeleton className="h-4 w-80 max-w-full" />
           </>
         )}
       </div>
@@ -290,7 +300,15 @@ export default function NewPackagePage() {
     recipientMode === "select" ? selectedRecipient?.name : newRecipientName.trim();
 
   return (
-    <div className="flex min-h-full flex-col">
+    <form
+      className="flex min-h-full flex-col"
+      aria-label="New package"
+      aria-busy={creating}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onCreate();
+      }}
+    >
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">New package</h1>
@@ -306,7 +324,7 @@ export default function NewPackagePage() {
           </Alert>
         )}
 
-        <div className="flex flex-col">
+        <fieldset disabled={creating} className="flex min-w-0 flex-col">
           <FormSection
             title="Package"
             description="Name it after the handoff, so that you can find it later."
@@ -315,6 +333,7 @@ export default function NewPackagePage() {
               <FieldLabel htmlFor="package-name">Name</FieldLabel>
               <Input
                 id="package-name"
+                required
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Contractor handoff"
@@ -380,6 +399,7 @@ export default function NewPackagePage() {
                   <FieldLabel htmlFor="recipient-name">Recipient name</FieldLabel>
                   <Input
                     id="recipient-name"
+                    required
                     value={newRecipientName}
                     onChange={(event) => setNewRecipientName(event.target.value)}
                     placeholder="Northwind Studio"
@@ -416,7 +436,7 @@ export default function NewPackagePage() {
             {activeProfile && (
               <div className="rounded-lg border bg-card">
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
-                  <div className="flex flex-col gap-0.5">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5 break-words">
                     <p className="text-sm font-medium">{activeProfile.name}</p>
                     {activeProfile.description && (
                       <p className="text-sm text-muted-foreground">{activeProfile.description}</p>
@@ -430,19 +450,20 @@ export default function NewPackagePage() {
                     Edit profile
                   </Button>
                 </div>
-                <dl className="grid grid-cols-1 divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                <dl className="divide-y">
                   {buckets.map((bucket) => (
-                    <div key={bucket.value} className="flex flex-col gap-1.5 px-4 py-3">
-                      <dt className="text-xs text-muted-foreground">{bucket.label}</dt>
-                      <dd className="text-sm">
+                    <div
+                      key={bucket.value}
+                      className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4"
+                    >
+                      <dt className="text-xs font-medium leading-5 text-muted-foreground">
+                        {bucket.label}
+                      </dt>
+                      <dd className="min-w-0 text-sm leading-5">
                         {activeProfile[bucket.value].length === 0 ? (
                           <span className="text-muted-foreground">None</span>
                         ) : (
-                          <ul className="flex flex-col gap-0.5">
-                            {activeProfile[bucket.value].map((category) => (
-                              <li key={category}>{categoryLabel(category)}</li>
-                            ))}
-                          </ul>
+                          activeProfile[bucket.value].map(categoryLabel).join(", ")
                         )}
                       </dd>
                     </div>
@@ -460,16 +481,18 @@ export default function NewPackagePage() {
               htmlFor="file-drop"
               onDragOver={(event) => {
                 event.preventDefault();
-                setDragging(true);
+
+                if (!creating) setDragging(true);
               }}
               onDragLeave={() => setDragging(false)}
               onDrop={(event) => {
                 event.preventDefault();
                 setDragging(false);
-                addFiles(event.dataTransfer.files);
+
+                if (!creating) addFiles(event.dataTransfer.files);
               }}
               className={cn(
-                "flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-input bg-card px-4 py-10 text-center transition-colors duration-150 hover:bg-accent/50 has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50",
+                "flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-input bg-card px-4 py-8 text-center transition-colors duration-150 hover:bg-accent/50 has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50",
                 dragging && "border-primary bg-selection hover:bg-selection",
               )}
             >
@@ -507,7 +530,10 @@ export default function NewPackagePage() {
                         className="flex items-center gap-3 border-b py-1.5 pr-1.5 pl-3 text-sm last:border-b-0"
                       >
                         <Icon className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]">
+                        <span
+                          title={file.name}
+                          className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]"
+                        >
                           {file.name}
                         </span>
                         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
@@ -552,7 +578,12 @@ export default function NewPackagePage() {
                   autoComplete="off"
                 />
                 <InputGroupAddon align="inline-end">
-                  <InputGroupButton variant="secondary" size="xs" onClick={addTerm}>
+                  <InputGroupButton
+                    variant="secondary"
+                    size="xs"
+                    onClick={addTerm}
+                    disabled={!termInput.trim()}
+                  >
                     Add
                   </InputGroupButton>
                 </InputGroupAddon>
@@ -561,13 +592,16 @@ export default function NewPackagePage() {
             {terms.length > 0 && (
               <ul className="flex flex-wrap gap-1.5" aria-label="Protected terms">
                 {terms.map((term) => (
-                  <li key={term}>
-                    <Badge variant="secondary" className="h-6 gap-1 pr-1 font-mono">
-                      {term}
+                  <li key={term} className="max-w-full">
+                    <Badge
+                      variant="secondary"
+                      className="h-auto min-h-7 max-w-full gap-1 py-0.5 pr-1 font-mono"
+                    >
+                      <span className="min-w-0 break-all whitespace-normal">{term}</span>
                       <button
                         type="button"
                         aria-label={`Remove term ${term}`}
-                        className="rounded-sm p-0.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                        className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-foreground/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() =>
                           setTerms((current) => current.filter((item) => item !== term))
                         }
@@ -580,19 +614,29 @@ export default function NewPackagePage() {
               </ul>
             )}
           </FormSection>
-        </div>
+        </fieldset>
       </div>
 
       <div className="sticky bottom-0 border-t bg-background">
         <div className="mx-auto flex w-full max-w-5xl flex-col items-stretch justify-between gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
-          <p className="min-w-0 text-sm break-words text-muted-foreground">
-            {name.trim() === "" ? "Untitled package" : name.trim()}
-            {recipientLabel ? ` · for ${recipientLabel}` : ""}
-            {" · "}
-            {plural(files.length, "file")}
-            {terms.length > 0 && ` · ${plural(terms.length, "protected term")}`}
-          </p>
-          <Button onClick={onCreate} disabled={creating}>
+          <div className="min-w-0 text-sm">
+            <p className="truncate font-medium" title={name.trim() || "Untitled package"}>
+              {name.trim() || "Untitled package"}
+            </p>
+            <p
+              className="truncate text-xs text-muted-foreground tabular-nums"
+              title={recipientLabel || undefined}
+            >
+              {recipientLabel && `For ${recipientLabel} · `}
+              {plural(files.length, "file")}
+              {files.length > 0 && ` · ${formatBytes(totalBytes)}`}
+              {terms.length > 0 && ` · ${plural(terms.length, "protected term")}`}
+            </p>
+          </div>
+          <span role="status" className="sr-only">
+            {creating ? (progress ?? "Creating…") : ""}
+          </span>
+          <Button type="submit" disabled={creating} className="min-w-36">
             {creating && <Spinner data-icon="inline-start" />}
             {creating ? (progress ?? "Creating…") : "Create package"}
           </Button>
@@ -602,12 +646,15 @@ export default function NewPackagePage() {
       <Dialog
         open={editingProfile !== null}
         onOpenChange={(open: boolean) => {
-          if (!open) {
+          if (!open && !savingProfile) {
             setEditingProfile(null);
           }
         }}
       >
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
+        <DialogContent
+          className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-2xl"
+          showCloseButton={!savingProfile}
+        >
           <DialogHeader>
             <DialogTitle>
               {editingProfile ? `Edit ${editingProfile.name}` : "Edit profile"}
@@ -617,32 +664,50 @@ export default function NewPackagePage() {
               that category. This changes the profile for every recipient that uses it.
             </DialogDescription>
           </DialogHeader>
-          <ul className="-mx-1 flex max-h-96 flex-col overflow-y-auto px-1">
+          <ul className="-mx-1 flex min-h-0 max-h-[55dvh] flex-col overflow-y-auto px-1">
             {CategorySchema.options.map((category) => (
               <li
                 key={category}
                 className="flex flex-col items-start gap-2 border-b py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
               >
-                <span className="text-sm">{categoryLabel(category)}</span>
+                <div className="min-w-0">
+                  <span className="text-sm font-medium">{categoryLabel(category)}</span>
+                  {category === "secret" && (
+                    <p id="secret-bucket-help" className="mt-1 text-xs text-muted-foreground">
+                      Secrets cannot be allowed.
+                    </p>
+                  )}
+                </div>
                 <ToggleGroup
                   value={editBuckets[category] ? [editBuckets[category]] : []}
-                  onValueChange={(value: string[]) =>
+                  onValueChange={(value: string[]) => {
+                    const bucket = buckets.find((item) => item.value === value[0]);
+
+                    if (!bucket) return;
+
                     setEditBuckets((current) => ({
                       ...current,
-                      [category]: buckets.find((bucket) => bucket.value === value[0])?.value,
-                    }))
-                  }
-                  spacing={0}
+                      [category]: bucket.value,
+                    }));
+                  }}
+                  disabled={savingProfile}
+                  spacing={1}
                   size="sm"
                   aria-label={`Bucket for ${categoryLabel(category)}`}
-                  className="w-full shrink-0 rounded-md bg-muted p-0.5 sm:w-72"
+                  aria-describedby={category === "secret" ? "secret-bucket-help" : undefined}
+                  className="grid w-full shrink-0 grid-cols-[1fr_1.5fr_1fr] rounded-lg border bg-muted/50 p-1 sm:w-88"
                 >
                   {buckets.map((bucket) => (
                     <ToggleGroupItem
                       key={bucket.value}
                       value={bucket.value}
-                      className={segmentItemClass}
+                      disabled={category === "secret" && bucket.value === "allowed"}
+                      className="h-9 min-w-0 gap-1 rounded-md text-xs text-muted-foreground transition-colors hover:bg-background/60 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs sm:h-8"
                     >
+                      <Check
+                        aria-hidden="true"
+                        className="hidden size-3 shrink-0 group-aria-pressed/toggle:block"
+                      />
                       {bucket.label}
                     </ToggleGroupItem>
                   ))}
@@ -665,6 +730,6 @@ export default function NewPackagePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </form>
   );
 }
