@@ -8,10 +8,10 @@ import type { Box, DocumentModel, DocumentSection, DocumentWord, HiddenItem } fr
 // PDF extraction and page rendering with MuPDF (KTD3, KTD9). Word boxes are in
 // render pixels: page points minus the page origin, times PAGE_SCALE.
 
-type Own = <D extends { destroy(): void }>(item: D) => D;
+export type Own = <D extends { destroy(): void }>(item: D) => D;
 
 /** Runs `run` and destroys every MuPDF object it registered with `own`, even when it throws. */
-function scoped<T>(run: (own: Own) => T): T {
+export function scoped<T>(run: (own: Own) => T): T {
   const owned: { destroy(): void }[] = [];
 
   try {
@@ -27,7 +27,7 @@ function scoped<T>(run: (own: Own) => T): T {
   }
 }
 
-function openPdf(bytes: Uint8Array, own: Own): mupdf.PDFDocument {
+export function openPdf(bytes: Uint8Array, own: Own): mupdf.PDFDocument {
   let pdf: mupdf.PDFDocument | null = null;
 
   try {
@@ -47,15 +47,15 @@ function openPdf(bytes: Uint8Array, own: Own): mupdf.PDFDocument {
   return pdf;
 }
 
-function hiddenId(kind: HiddenItem["kind"], ...parts: string[]): string {
+export function hiddenId(kind: HiddenItem["kind"], ...parts: string[]): string {
   return `${kind}-${createHash("sha256").update(parts.join("\0")).digest("hex").slice(0, 12)}`;
 }
 
 const INFO_FIELDS = ["Author", "Creator", "Producer", "Title", "Subject", "Keywords"];
 
-type PdfWord = { text: string; x0: number; y0: number; x1: number; y1: number; size: number };
+export type PdfWord = { text: string; x0: number; y0: number; x1: number; y1: number; size: number };
 
-function pageWords(page: mupdf.PDFPage, own: Own) {
+export function pageWords(page: mupdf.PDFPage, own: Own) {
   const lines: PdfWord[][] = [];
   let line: PdfWord[] = [];
   let word: PdfWord | null = null;
@@ -106,6 +106,24 @@ function pageWords(page: mupdf.PDFPage, own: Own) {
   endLine();
 
   return { lines, hasImageBlock: imageBlocks > 0 };
+}
+
+/** True for text outside the page bounds or in a font too small to see. */
+export function isHiddenWord(word: PdfWord, [left, top, right, bottom]: mupdf.Rect): boolean {
+  const outside = word.x1 <= left || word.x0 >= right || word.y1 <= top || word.y0 >= bottom;
+
+  return outside || word.size < 1;
+}
+
+/** The host of an http(s) link, or "" for anything else. */
+export function linkHost(uri: string): string {
+  try {
+    const url = new URL(uri);
+
+    return /^https?:$/.test(url.protocol) ? url.hostname : "";
+  } catch {
+    return "";
+  }
 }
 
 function outlineTitles(items: ReturnType<mupdf.Document["loadOutline"]>): string[] {
@@ -168,9 +186,7 @@ export async function extractPdf(input: DocumentExtractInput): Promise<DocumentM
             h: Math.max(0.1, (word.y1 - word.y0) * PAGE_SCALE),
           };
 
-          const outside = word.x1 <= left || word.x0 >= right || word.y1 <= top || word.y0 >= bottom;
-
-          if (outside || word.size < 1) {
+          if (isHiddenWord(word, [left, top, right, bottom])) {
             offPage.push(word.text);
           }
 
@@ -253,16 +269,7 @@ export async function extractPdf(input: DocumentExtractInput): Promise<DocumentM
       }
 
       for (const link of page.getLinks().map(own)) {
-        const uri = link.getURI();
-        let host = "";
-
-        try {
-          const url = new URL(uri);
-
-          host = /^https?:$/.test(url.protocol) ? url.hostname : "";
-        } catch {
-          host = "";
-        }
+        const host = linkHost(link.getURI());
 
         if (host) {
           addHidden({ id: hiddenId("external-link", host), kind: "external-link", note: `Link to ${host}`, quote: host });
