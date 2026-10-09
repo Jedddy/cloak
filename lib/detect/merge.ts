@@ -38,8 +38,11 @@ function candidatesOverlap(left: FindingCandidate, right: FindingCandidate): boo
             }
           }
 
+          // Document hidden items are separate findings: each anchor names one item to remove.
           if (leftEvidence.type === "file-structure" && rightEvidence.type === "file-structure") {
-            return true;
+            if ((leftEvidence.anchor ?? null) === (rightEvidence.anchor ?? null)) {
+              return true;
+            }
           }
         }
       }
