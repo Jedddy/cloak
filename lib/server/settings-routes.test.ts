@@ -18,12 +18,21 @@ function post(body: string) {
   return new Request("http://127.0.0.1/api", { method: "POST", body });
 }
 
-test("POST /api/settings/test with the stub AI layer returns locality mock and mode full", async () => {
-  const response = await testSettings();
-  const result = ConnectionTestResultSchema.parse(await response.json());
+test("POST /api/settings/test with LLM_PROVIDER=mock returns locality mock and mode full", async () => {
+  const previous = process.env.LLM_PROVIDER;
 
-  expect(result.locality).toBe("mock");
-  expect(result.mode).toBe("full");
+  process.env.LLM_PROVIDER = "mock";
+
+  try {
+    const response = await testSettings();
+    const result = ConnectionTestResultSchema.parse(await response.json());
+
+    expect(result.locality).toBe("mock");
+    expect(result.mode).toBe("full");
+  } finally {
+    if (previous === undefined) delete process.env.LLM_PROVIDER;
+    else process.env.LLM_PROVIDER = previous;
+  }
 });
 
 test("a new profile is created and then updated by id", async () => {
