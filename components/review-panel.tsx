@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { FileList } from "@/components/file-list";
+import { DocumentViewer } from "@/components/document-viewer";
 import { DecisionMark, FindingRow } from "@/components/finding-card";
 import { ImageViewer } from "@/components/image-viewer";
+import { PdfViewer } from "@/components/pdf-viewer";
 import { TextViewer } from "@/components/text-viewer";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,10 +27,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useDocumentModel } from "@/components/use-document-model";
 import {
   decideFinding,
+  filePageUrl,
   findRelated,
+  getFileDocument,
   originalFileUrl,
   saveRegion,
   updateFile,
@@ -74,6 +80,14 @@ export function ReviewPanel({
   const [relatedOpen, setRelatedOpen] = useState(false);
 
   const selectedFile = files.find((file) => file.id === fileId) ?? files[0];
+
+  // Documents are extracted by the scan, so a new scan loads the model again.
+  const documentKey =
+    selectedFile?.kind === "document" ? `${selectedFile.id}:${detail.package.status}` : null;
+
+  const { model: documentModel, error: documentError } = useDocumentModel(documentKey, () =>
+    getFileDocument(packageId, selectedFile?.id ?? ""),
+  );
 
   const fileFindings = useMemo(
     () =>
@@ -201,7 +215,7 @@ export function ReviewPanel({
     }
   }
 
-  async function drawBox(box: Box) {
+  async function drawBox(box: Box, anchor?: string) {
     if (!selectedFile) {
       return;
     }
@@ -214,12 +228,14 @@ export function ReviewPanel({
           action: "update",
           findingId: selected.id,
           box,
+          anchor,
         });
       } else {
         await saveRegion(packageId, {
           action: "add",
           fileId: selectedFile.id,
           box,
+          anchor,
           category: "other",
         });
       }
@@ -227,6 +243,29 @@ export function ReviewPanel({
       await onRefresh();
     } catch (regionError) {
       toast.error(regionError instanceof Error ? regionError.message : "Box failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addSpan(start: number, end: number) {
+    if (!selectedFile) {
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      await saveRegion(packageId, {
+        action: "add-span",
+        fileId: selectedFile.id,
+        start,
+        end,
+        category: "other",
+      });
+      await onRefresh();
+    } catch (spanError) {
+      toast.error(spanError instanceof Error ? spanError.message : "Finding failed.");
     } finally {
       setBusy(false);
     }
@@ -381,6 +420,41 @@ export function ReviewPanel({
                 onDraw={drawBox}
                 onMove={moveBox}
                 onDeleteBox={deleteBox}
+              />
+            )}
+            {selectedFile.kind === "document" && documentError && (
+              <p className="p-4 text-sm text-destructive">{documentError}</p>
+            )}
+            {selectedFile.kind === "document" && !documentError && !documentModel && (
+              <div className="flex flex-col gap-2 p-4">
+                <Skeleton className="h-3.5 w-3/4" />
+                <Skeleton className="h-3.5 w-1/2" />
+                <Skeleton className="h-3.5 w-2/3" />
+              </div>
+            )}
+            {documentModel?.format === "pdf" && (
+              <PdfViewer
+                key={selectedFile.id}
+                model={documentModel}
+                pageUrl={(page) => filePageUrl(packageId, selectedFile.id, page)}
+                fileName={selectedFile.originalName}
+                findings={fileFindings}
+                selectedFindingId={selected?.id ?? null}
+                needsBox={needsBox}
+                onSelectFinding={setFindingId}
+                onDraw={drawBox}
+                onMove={moveBox}
+                onDeleteBox={deleteBox}
+              />
+            )}
+            {documentModel && documentModel.format !== "pdf" && (
+              <DocumentViewer
+                key={selectedFile.id}
+                model={documentModel}
+                findings={fileFindings}
+                selectedFindingId={selected?.id ?? null}
+                onSelectFinding={setFindingId}
+                onAddSpan={addSpan}
               />
             )}
             {selectedFile.kind === "unsupported" && (
