@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -135,10 +135,10 @@ export function ExportPanel({
               {running ? "Exporting…" : "Export reviewed copies"}
             </Button>
             {detail.package.status === "exported" && (
-              <Button variant="outline" render={<a href={exportZipUrl(packageId)} />}>
+              <a href={exportZipUrl(packageId)} className={buttonVariants({ variant: "outline" })}>
                 <Download />
                 Download zip
-              </Button>
+              </a>
             )}
           </div>
           {detail.warnings.length > 0 && (
@@ -285,10 +285,10 @@ export function ExportPanel({
               </>
             )}
             <div>
-              <Button variant="outline" render={<a href={exportZipUrl(packageId)} />}>
+              <a href={exportZipUrl(packageId)} className={buttonVariants({ variant: "outline" })}>
                 <Download />
                 Download zip
-              </Button>
+              </a>
             </div>
           </CardContent>
         </Card>

@@ -218,7 +218,11 @@ export function ScanPanel({
           <DialogHeader>
             <DialogTitle>Send files to a remote model?</DialogTitle>
             <DialogDescription>
-              File text and images will be sent to `{remoteHost ?? "the remote host"}`.
+              File text and images will be sent to{" "}
+              <span className="font-medium text-foreground">
+                {remoteHost ?? "the remote host"}
+              </span>
+              .
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

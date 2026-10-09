@@ -1,7 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 
 import { LocalityBadge } from "@/components/locality-badge";
 import { ExportPanel } from "@/components/export-panel";
@@ -23,9 +22,12 @@ import type {
 } from "@/lib/contract/schemas";
 import { hostnameOf, modeLabel } from "@/lib/utils";
 
-export function PackageWorkspace() {
-  const params = useParams<{ id: string }>();
-  const id = params.id;
+export function PackageWorkspace({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
   const [detail, setDetail] = useState<PackageDetail | null>(null);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [job, setJob] = useState<Job | null>(null);

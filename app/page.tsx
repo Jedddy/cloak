@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -149,7 +149,9 @@ export default function PackagesPage() {
             One package per recipient handoff.
           </p>
         </div>
-        <Button render={<Link href="/packages/new" />}>New package</Button>
+        <Link href="/packages/new" className={buttonVariants()}>
+          New package
+        </Link>
       </div>
 
       {error && (
@@ -172,9 +174,9 @@ export default function PackagesPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button render={<Link href="/packages/new" />}>
+            <Link href="/packages/new" className={buttonVariants()}>
               New package
-            </Button>
+            </Link>
           </CardContent>
         </Card>
       )}
