@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { columnName, columnNumber, normalizeText } from "./utils";
+import { columnName, columnNumber, containsWord, decodeXmlEntities, normalizeText } from "./utils";
 
 test("column names and numbers round-trip", () => {
   expect(columnName(1)).toBe("A");
@@ -18,4 +18,19 @@ test("column names and numbers round-trip", () => {
 
 test("normalizeText trims, collapses whitespace and lowercases", () => {
   expect(normalizeText("  Foo \n\t BAR ")).toBe("foo bar");
+});
+
+test("containsWord needs a word boundary on the sides where the needle has a letter or digit", () => {
+  expect(containsWord("the annual plan", "annual")).toBe(true);
+  expect(containsWord("planning", "ann")).toBe(false);
+  expect(containsWord("/type /page", "page")).toBe(true);
+  expect(containsWord("pages", "page")).toBe(false);
+  expect(containsWord("xplanning ann.", "ann")).toBe(true);
+  expect(containsWord("call x+1 555", "+1 555")).toBe(true);
+  expect(containsWord("ab", "")).toBe(false);
+});
+
+test("decodeXmlEntities decodes named and numeric entities", () => {
+  expect(decodeXmlEntities("Tom &amp; Jerry &lt;b&gt; &quot;x&quot; &apos;y&apos; &#65;&#x42;")).toBe("Tom & Jerry <b> \"x\" 'y' AB");
+  expect(decodeXmlEntities("&AMP;")).toBe("&");
 });

@@ -1,10 +1,9 @@
 import * as mupdf from "mupdf";
 
 import type { DocumentRedactionInput, DocumentRedactionResult } from "@/lib/contract/interfaces";
-import { PAGE_SCALE, RESIDUE_MIN_NEEDLE, pageOfAnchor } from "@/lib/contract/schemas";
+import { PAGE_SCALE, pageOfAnchor } from "@/lib/contract/schemas";
 import type { Box, DocumentWord } from "@/lib/contract/schemas";
 import { padBox, paintBox } from "@/lib/redact/image";
-import { normalizeText } from "@/lib/utils";
 
 import {
   hiddenId,
@@ -75,22 +74,21 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
     const remove = new Set(input.removeHidden);
     const pageCount = doc.countPages();
     const bounds = Array.from({ length: pageCount }, (_, index) => scoped((o) => o(doc.loadPage(index)).getBounds()));
-    // Per page index: boxes in page points, text that must be gone, and why the page is flattened.
+    // Per page index: boxes in page points, and why the page is flattened.
     const rects = new Map<number, mupdf.Rect[]>();
-    const needles = new Map<number, string[]>();
     const flatten = new Map<number, "text" | "layer">();
 
     const addRect = (index: number, rect: mupdf.Rect) => appendTo(rects, index, rect);
-    const addNeedle = (index: number, text: string) => appendTo(needles, index, normalizeText(text));
 
     const addBox = (index: number, box: Box) => {
-      const [left, top] = bounds[index]!;
+      const [left, top, right, bottom] = bounds[index]!;
 
+      // Clamped to the page, so a box meant to cover everything stays a sane rectangle.
       addRect(index, [
-        left + box.x / PAGE_SCALE,
-        top + box.y / PAGE_SCALE,
-        left + (box.x + box.w) / PAGE_SCALE,
-        top + (box.y + box.h) / PAGE_SCALE,
+        Math.min(right, left + box.x / PAGE_SCALE),
+        Math.min(bottom, top + box.y / PAGE_SCALE),
+        Math.min(right, left + (box.x + box.w) / PAGE_SCALE),
+        Math.min(bottom, top + (box.y + box.h) / PAGE_SCALE),
       ]);
     };
 
@@ -112,7 +110,6 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
 
       for (const [index, words] of byPage) {
         words.forEach((word) => addBox(index, word.box));
-        addNeedle(index, input.model.text.slice(Math.max(span.start, words[0]!.start), Math.min(span.end, words.at(-1)!.end)));
       }
     }
 
@@ -183,7 +180,6 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
         if (offPage.length > 0 && remove.has(hiddenId("off-page-text", String(number), quote))) {
           for (const word of offPage) {
             addRect(index, [word.x0, word.y0, word.x1, word.y1]);
-            addNeedle(index, word.text);
           }
         }
       });
@@ -255,12 +251,27 @@ export async function redactPdf(input: DocumentRedactionInput): Promise<Document
       }
     }
 
-    // KTD10: a page whose text is still extractable is flattened.
-    for (const [index, pageNeedles] of needles) {
-      scoped((o) => {
-        const text = normalizeText(o(o(doc.loadPage(index)).toStructuredText("preserve-whitespace,clip=no")).asText());
+    // KTD10: a page where text survived under a redaction box is flattened. Only characters whose center lies
+    // inside a box count, so the same letters in other words do not.
+    for (const index of rects.keys()) {
+      if (flatten.has(index)) {
+        continue;
+      }
 
-        if (!flatten.has(index) && pageNeedles.some((needle) => needle.length >= RESIDUE_MIN_NEEDLE && text.includes(needle))) {
+      scoped((o) => {
+        const pageRects = rects.get(index) ?? [];
+        let survived = false;
+
+        o(o(doc.loadPage(index)).toStructuredText("preserve-whitespace,clip=no")).walk({
+          onChar: (c, _origin, _font, _size, quad) => {
+            const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4;
+            const y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
+
+            survived ||= !/\s/.test(c) && pageRects.some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+          },
+        });
+
+        if (survived) {
           flatten.set(index, "text");
         }
       });

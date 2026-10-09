@@ -125,7 +125,8 @@ export async function verifyReviewed(input: VerifyInput): Promise<VerifyOutput> 
         title: "Redacted text still present in the reviewed copy",
         reason: "Text that was approved for removal is still in the reviewed file.",
         relatedGroupId: null,
-        suggestedAction: "redact",
+        // Nothing on the original can be redacted for it: the user decides.
+        suggestedAction: "needs-decision",
         allowedByRecipient: false,
       });
     }

@@ -272,11 +272,11 @@ export function ReviewPanel({
     }
   }
 
-  async function moveBox(id: string, box: Box) {
+  async function moveBox(id: string, box: Box, anchor?: string) {
     setBusy(true);
 
     try {
-      await saveRegion(packageId, { action: "update", findingId: id, box });
+      await saveRegion(packageId, { action: "update", findingId: id, box, anchor });
       await onRefresh();
     } catch (moveError) {
       toast.error(moveError instanceof Error ? moveError.message : "Move failed.");

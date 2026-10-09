@@ -56,12 +56,37 @@ describe("residue PDF", () => {
     expect(await residue({ format: "pdf", bytes, needles: ["acme corp", "BETA WORKS", "Gamma Co"] })).toEqual(["acme corp", "BETA WORKS"]);
   });
 
-  test("finds a needle written as a #20-escaped PDF name", async () => {
+  test("a needle that is only a PDF name or a part of a longer word is not residue", async () => {
+    const bytes = buildPdf({ pages: [{ lines: ["Annual planning notes"] }] });
+
+    // "Page" is the /Type of every page object; "ann" is inside "Annual" and "planning".
+    expect(await residue({ format: "pdf", bytes, needles: ["Page", "Pages", "Catalog", "ann", "plan"] })).toEqual([]);
+    expect(await residue({ format: "pdf", bytes, needles: ["annual", "planning"] })).toEqual(["annual", "planning"]);
+  });
+
+  test("finds a needle in a literal string with escapes and octal codes, in a compressed stream", async () => {
+    const body = "/A (Acme \\(Corp\\) \\101cme) /B (Nested (parens) stay) /C (Zeb\\\nra) /D <5a65627261204c6179657221>";
+
     const bytes = pdfWith((doc) => {
-      doc.getTrailer().get("Root").put("Unused", doc.addObject({ Name: doc.newName("Zebra layer") }));
+      doc.getTrailer().get("Root").put("Unused", doc.addRawStream(deflateSync(Buffer.from(body)), { Filter: "FlateDecode" }));
     });
 
-    expect(await residue({ format: "pdf", bytes, needles: ["Zebra layer"] })).toEqual(["Zebra layer"]);
+    expect(await residue({ format: "pdf", bytes, needles: ["Acme (Corp) Acme", "nested (parens) stay", "Zebra", "Zebra Layer!", "Nest"] })).toEqual([
+      "Acme (Corp) Acme",
+      "nested (parens) stay",
+      "Zebra",
+      "Zebra Layer!",
+    ]);
+  });
+
+  test("finds a needle in XMP metadata", async () => {
+    const xmp = "<?xpacket begin='x'?><x:xmpmeta xmlns:x='adobe:ns:meta/'><dc:creator>Pat Doe</dc:creator></x:xmpmeta>";
+
+    const bytes = pdfWith((doc) => {
+      doc.getTrailer().get("Root").put("Metadata", doc.addStream(xmp, { Type: "Metadata", Subtype: "XML" }));
+    });
+
+    expect(await residue({ format: "pdf", bytes, needles: ["Pat Doe", "xmpmeta"] })).toEqual(["Pat Doe"]);
   });
 
   test("ignores needles under 3 characters, and returns each needle once", async () => {

@@ -97,6 +97,17 @@ describe("redactPdf text", () => {
     }
   });
 
+  test("a page is not flattened because the needle is a part of other words that stay", async () => {
+    const source = buildPdf({ pages: [{ lines: ["Ann met Annual", "planning"] }] });
+    const { bytes, notes } = await run(source, { spans: ["Ann"] });
+
+    expect(notes).toEqual([]);
+    expect(pdfText(bytes)[0]).not.toMatch(/\bAnn\b/);
+    expect(pdfText(bytes)[0]).toContain("Annual");
+    expect(pdfText(bytes)[0]).toContain("planning");
+    expect((await extract(bytes)).pages[0]?.hasTextLayer).toBe(true);
+  });
+
   test("a span over Bookmarks text drops the outline", async () => {
     const doc = new mupdf.PDFDocument(three);
 
@@ -182,8 +193,8 @@ describe("redactPdf hidden items", () => {
     const doc = new mupdf.PDFDocument(built);
     const root = doc.getTrailer().get("Root");
 
-    root.put("OpenAction", doc.addObject({ S: "JavaScript", JS: "app.alert('Zebra script')" }));
-    root.get("Names").put("JavaScript", { Names: ["x", doc.addObject({ S: "JavaScript", JS: "app.alert('Zebra names')" })] });
+    root.put("OpenAction", doc.addObject({ S: "JavaScript", JS: doc.newString("app.alert('Zebra script')") }));
+    root.get("Names").put("JavaScript", { Names: ["x", doc.addObject({ S: "JavaScript", JS: doc.newString("app.alert('Zebra names')") })] });
 
     const source = doc.saveToBuffer("").asUint8Array().slice();
     const kinds = ["attachment", "external-link", "javascript"];
@@ -209,8 +220,8 @@ describe("redactPdf hidden items", () => {
       Type: "Annot",
       Subtype: "Widget",
       FT: "Tx",
-      T: "owner",
-      V: "Zebra Person",
+      T: doc.newString("owner"),
+      V: doc.newString("Zebra Person"),
       DA: "/Helv 12 Tf 0 g",
       Rect: [100, 600, 300, 620],
       F: 4,
@@ -235,7 +246,7 @@ describe("redactPdf hidden items", () => {
 
   test("a hidden layer's pages are flattened without the layer", async () => {
     const doc = new mupdf.PDFDocument(buildPdf({ pages: [{ lines: ["Visible text"] }, { lines: ["Other page"] }] }));
-    const layer = doc.addObject({ Type: "OCG", Name: "Zebra layer" });
+    const layer = doc.addObject({ Type: "OCG", Name: doc.newString("Zebra layer") });
     const page = doc.loadPage(0);
 
     page.getObject().get("Resources").put("Properties", { MC0: layer });

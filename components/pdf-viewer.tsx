@@ -109,7 +109,7 @@ export function PdfViewer({
   needsBox: boolean;
   onSelectFinding: (findingId: string) => void;
   onDraw: (box: Box, anchor: string) => void;
-  onMove: (findingId: string, box: Box) => void;
+  onMove: (findingId: string, box: Box, anchor: string) => void;
   onDeleteBox: (findingId: string) => void;
 }) {
   const pageRefs = useRef(new Map<number, HTMLElement>());
@@ -164,7 +164,7 @@ export function PdfViewer({
               needsBox={pageNeedsBox}
               onSelectFinding={onSelectFinding}
               onDraw={(box) => onDraw(box, anchor)}
-              onMove={onMove}
+              onMove={(findingId, box) => onMove(findingId, box, anchor)}
               onDeleteBox={onDeleteBox}
             />
           </section>

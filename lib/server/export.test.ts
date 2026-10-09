@@ -2,6 +2,7 @@ import { beforeEach, expect, test } from "bun:test";
 import { chmod, readdir, readFile, writeFile } from "node:fs/promises";
 
 import JSZip from "jszip";
+import * as mupdf from "mupdf";
 import sharp from "sharp";
 
 import { fixtureProfiles } from "@/lib/contract/fixtures";
@@ -274,6 +275,7 @@ test("AE8: a needle still in the reviewed copy opens a finding on the original f
   expect(result?.text).not.toBe(NO_OPEN_FINDINGS_TEXT);
   expect(open?.fileId).toBe((await readPackage(pkg.id)).files[0]?.id ?? "missing");
   expect(open?.decision).toBe("open");
+  expect(open?.suggestedAction).toBe("needs-decision");
 });
 
 test("F3/F4: a protected term decided redact is gone from the reviewed PDF and verification is clean", async () => {
@@ -445,6 +447,118 @@ test("a document finding with only image-whole evidence blocks export; a hidden:
   };
 
   await withFindingsLock(pkg.id, async () => writeFindings(pkg.id, [hidden]));
+
+  const job = await startExport(pkg.id, { confirmWarnings: false }, layers);
+
+  expect(await waitForJob(job.id)).toBe("done");
+});
+
+/** A one-page PDF with a sticky note by `author` and the given body lines, scanned; returns the hidden-item findings. */
+async function scanNotePdf(author: string, lines: string[], layers: Layers) {
+  await scanDocuments([{ name: "n.pdf", bytes: buildPdf({ pages: [{ lines, note: { author, contents: "Check the price" } }] }) }], layers);
+
+  const findings = await readFindings(pkg.id);
+  const hidden = findings.filter((finding) => finding.detections.some((detection) => detection.evidence.some((entry) => entry.type === "file-structure" && entry.anchor?.startsWith("hidden:"))));
+
+  expect(hidden.length).toBeGreaterThan(0);
+
+  return { findings, hidden };
+}
+
+test("a removed hidden item whose quote is also visible text is not a residue needle", async () => {
+  const layers = documentLayers();
+  const { findings } = await scanNotePdf("J. Cruz", ["Signed by J. Cruz"], layers);
+
+  for (const finding of findings) {
+    const isNote = finding.title.startsWith("Comment by");
+
+    await decideFinding(pkg.id, finding.id, { decision: isNote ? "redact" : "keep", applyToGroup: false }, layers);
+  }
+
+  await exportPackage(layers);
+
+  const result = await verification();
+
+  expect(result?.openFindings).toEqual([]);
+  expect(result?.text).toBe(NO_OPEN_FINDINGS_TEXT);
+});
+
+test("a hidden item that survives removal is an open finding on the original", async () => {
+  const layers = documentLayers();
+  const ignoring: Layers = { ...layers, document: { ...layers.document, redact: (input) => layers.document.redact({ ...input, removeHidden: [] }) } };
+  const { findings, hidden } = await scanNotePdf("Zed Quux", ["Signed by someone"], layers);
+
+  for (const finding of findings) {
+    await decideFinding(pkg.id, finding.id, { decision: hidden.includes(finding) ? "redact" : "keep", applyToGroup: false }, layers);
+  }
+
+  await exportPackage(ignoring);
+
+  const result = await verification();
+  const note = hidden.find((finding) => finding.title.startsWith("Comment by"));
+
+  expect(result?.status).toBe("open-findings");
+  expect(result?.openFindings.map((finding) => finding.id)).toContain(note?.id ?? "missing");
+});
+
+test("a document finding with image-whole evidence and a page anchor is redacted over the whole page", async () => {
+  const layers = documentLayers();
+
+  await scanDocuments([{ name: "a.pdf", bytes: buildPdf({ pages: [{ lines: pdfLines, image: true }] }) }], layers);
+
+  const [file] = (await readPackage(pkg.id)).files;
+
+  const finding: Finding = {
+    id: "fnd-page",
+    fileId: file?.id ?? "",
+    category: "unreleased-work",
+    detections: [{ method: "llm-vision", ruleId: null, evidence: [{ type: "image-whole", note: "Picture.", anchor: "page:1" }] }],
+    title: "t",
+    reason: "r",
+    suggestedAction: "needs-decision",
+    allowedByRecipient: false,
+    decision: "redact",
+    relatedGroupId: null,
+  };
+
+  await withFindingsLock(pkg.id, async () => writeFindings(pkg.id, [finding]));
+
+  const job = await startExport(pkg.id, { confirmWarnings: false }, layers);
+
+  expect(await waitForJob(job.id)).toBe("done");
+
+  const reviewed = new Uint8Array(await readFile(workspacePaths.reviewed(pkg.id, "a.pdf")));
+  const doc = new mupdf.PDFDocument(reviewed);
+  const page = doc.loadPage(0);
+  const pixmap = page.toPixmap(mupdf.Matrix.scale(1, 1), mupdf.ColorSpace.DeviceGray, false, true);
+  const lightest = Math.max(...pixmap.getPixels());
+
+  expect(page.toStructuredText("preserve-whitespace").asText().trim()).toBe("");
+  expect(lightest).toBe(0);
+  doc.destroy();
+});
+
+test("a document finding with image-whole evidence and an image anchor can be exported", async () => {
+  const layers = documentLayers();
+
+  await scanDocuments([{ name: "a.pdf", bytes: buildPdf({ pages: [{ lines: pdfLines }] }) }], layers);
+
+  const [file] = (await readPackage(pkg.id)).files;
+
+  const finding: Finding = {
+    id: "fnd-image",
+    fileId: file?.id ?? "",
+    category: "unreleased-work",
+    detections: [{ method: "llm-vision", ruleId: null, evidence: [{ type: "image-whole", note: "Picture.", anchor: "image:word/media/image1.png" }] }],
+    title: "t",
+    reason: "r",
+    suggestedAction: "needs-decision",
+    allowedByRecipient: false,
+    decision: "redact",
+    relatedGroupId: null,
+  };
+
+  await withFindingsLock(pkg.id, async () => writeFindings(pkg.id, [finding]));
 
   const job = await startExport(pkg.id, { confirmWarnings: false }, layers);
 

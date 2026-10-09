@@ -221,3 +221,50 @@ export function columnNumber(letters: string): number {
 
   return number;
 }
+
+const wordCharacter = /[\p{L}\p{N}]/u;
+
+/**
+ * True when `needle` occurs in `text` (both already passed through `normalizeText`) with no letter or digit
+ * right before it or right after it, on the sides where the needle itself starts or ends with one.
+ */
+export function containsWord(text: string, needle: string): boolean {
+  if (needle === "") {
+    return false;
+  }
+
+  const checkBefore = wordCharacter.test(needle.at(0)!);
+  const checkAfter = wordCharacter.test(needle.at(-1)!);
+
+  for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) {
+    const before = text.charAt(at - 1);
+    const after = text.charAt(at + needle.length);
+
+    if ((checkBefore && at > 0 && wordCharacter.test(before)) || (checkAfter && wordCharacter.test(after))) {
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+const XML_ENTITIES = new Map([
+  ["amp", "&"],
+  ["lt", "<"],
+  ["gt", ">"],
+  ["quot", '"'],
+  ["apos", "'"],
+]);
+
+/** Decodes the five named XML entities and numeric character references; an unknown named entity becomes empty. */
+export function decodeXmlEntities(text: string): string {
+  return text.replace(/&(?:#x([0-9a-f]+)|#(\d+)|(amp|lt|gt|quot|apos));/gi, (_, hex, dec, name) => {
+    if (name) {
+      return XML_ENTITIES.get(name.toLowerCase()) ?? "";
+    }
+
+    return String.fromCodePoint(Number.parseInt(hex ?? dec, hex ? 16 : 10));
+  });
+}
