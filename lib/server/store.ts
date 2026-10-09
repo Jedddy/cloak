@@ -23,8 +23,10 @@ import {
   type OcrResult,
   type Package,
   type PackageCreateBody,
+  type ProfileUpsertBody,
   type Recipient,
   type RecipientProfile,
+  type RecipientUpsertBody,
   type SavedSettings,
   type VerificationResult,
 } from "@/lib/contract/schemas";
@@ -150,9 +152,64 @@ export async function writeRecipients(recipients: Recipient[]): Promise<void> {
   await writeJsonAtomic(workspacePaths.recipients(), RecipientSchema.array().parse(recipients));
 }
 
-/** Runs a read-modify-write of profiles.json or recipients.json one at a time. */
-export function withWorkspaceLock<Result>(name: "profiles" | "recipients", run: () => Promise<Result>) {
-  return serialized(`workspace:${name}`, run);
+/** Applies `change` to recipients.json; changes run one at a time. */
+export function updateRecipients(
+  change: (recipients: Recipient[]) => Recipient[] | Promise<Recipient[]>,
+): Promise<Recipient[]> {
+  return serialized("workspace:recipients", async () => {
+    const next = await change(await readRecipients());
+
+    await writeRecipients(next);
+
+    return next;
+  });
+}
+
+/** Creates a profile, or updates the profile with `body.id`. */
+export function saveProfile(body: ProfileUpsertBody): Promise<RecipientProfile> {
+  return serialized("workspace:profiles", async () => {
+    const profiles = await readProfiles();
+    const profile: RecipientProfile = { ...body, id: body.id ?? `profile-${randomUUID()}` };
+
+    if (body.id !== undefined && !profiles.some((entry) => entry.id === body.id)) {
+      throw new ApiError("not-found", "No profile with this id.");
+    }
+
+    const others = profiles.filter((entry) => entry.id !== profile.id);
+
+    await writeProfiles([...others, profile]);
+
+    return profile;
+  });
+}
+
+/** Creates a recipient, or updates the name and profile of `body.id`. Allow rules stay. */
+export async function saveRecipient(body: RecipientUpsertBody): Promise<Recipient> {
+  const profiles = await readProfiles();
+
+  if (!profiles.some((profile) => profile.id === body.profileId)) {
+    throw new ApiError("bad-request", "No profile with this id.");
+  }
+
+  let saved: Recipient = { id: body.id ?? `recipient-${randomUUID()}`, name: body.name, profileId: body.profileId, allowRules: [] };
+
+  await updateRecipients((recipients) => {
+    const existing = recipients.find((recipient) => recipient.id === saved.id);
+
+    if (body.id !== undefined && existing === undefined) {
+      throw new ApiError("not-found", "No recipient with this id.");
+    }
+
+    saved = { ...saved, allowRules: existing?.allowRules ?? [] };
+
+    if (existing === undefined) {
+      return [...recipients, saved];
+    }
+
+    return recipients.map((recipient) => (recipient.id === saved.id ? saved : recipient));
+  });
+
+  return saved;
 }
 
 // ---------------------------------------------------------------------------

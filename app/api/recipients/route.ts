@@ -1,21 +1,20 @@
 import { connection } from "next/server";
 
-import { fixtureRecipients } from "@/lib/contract/fixtures";
 import { RecipientUpsertBodySchema } from "@/lib/contract/schemas";
 import { readJson, respond } from "@/lib/server/http";
-
-// Stub (KTD3): replaced in U7.
+import { readRecipients, saveRecipient } from "@/lib/server/store";
 
 export async function GET() {
   await connection();
 
-  return Response.json(fixtureRecipients);
+  return respond(async () => Response.json(await readRecipients()));
 }
 
+/** No id creates a recipient; an id updates its name and profile. Allow rules stay. */
 export async function POST(request: Request) {
   return respond(async () => {
     const body = await readJson(request, RecipientUpsertBodySchema);
 
-    return Response.json({ ...body, id: body.id ?? "recipient-stub", allowRules: [] });
+    return Response.json(await saveRecipient(body));
   });
 }
