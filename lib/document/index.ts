@@ -1,17 +1,22 @@
 import type { DocumentLayer } from "@/lib/contract/interfaces";
 
+import { withOcr } from "./ocr";
+import { extractOoxml, ooxmlImages } from "./ooxml";
+import { extractPdf, pdfImages, renderPdfPage } from "./pdf";
+
 // The document layer: PDF and Office extraction, redaction, and the residue
-// check (KTD1). Later units replace the placeholder bodies below.
+// check (KTD1). lib/server/layers.ts picks this bundle; nothing else imports
+// lib/document.
 
 function notImplemented(): never {
   throw new Error("Not implemented yet.");
 }
 
 export const documentLayer: DocumentLayer = {
-  extract: async () => notImplemented(),
-  images: async () => notImplemented(),
-  withOcr: (input) => input.model,
-  renderPage: async () => notImplemented(),
+  extract: (input) => (input.format === "pdf" ? extractPdf(input) : extractOoxml(input)),
+  images: (input) => (input.format === "pdf" ? pdfImages(input) : ooxmlImages(input)),
+  withOcr,
+  renderPage: renderPdfPage,
   redact: async () => notImplemented(),
   residue: async () => [],
 };
